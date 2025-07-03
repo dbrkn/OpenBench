@@ -29,6 +29,9 @@ whisperx = "^3.3.1"
 torch = "2.5.0"
 scikit-learn = "1.5.1"
 speechbrain = "1.0.2"
+websockets = "^10.1"
+dotenv = "^0.9.9"
+websocket-client = "^1.8.0"
 
 [tool.poetry.group.dataset.dependencies]
 gdown = "^5.2.0"
