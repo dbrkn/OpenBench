@@ -1,16 +1,16 @@
 # For licensing see accompanying LICENSE.md file.
 # Copyright (C) 2025 Argmax, Inc. All Rights Reserved.
 
-"""Main CLI entry point for sdbench-cli."""
+"""Main CLI entry point for openbench-cli."""
 
 import typer
 
-from .commands import evaluate, inference, summary
+from openbench.cli.commands import evaluate, inference, summary
 
 
 app = typer.Typer(
-    name="sdbench-cli",
-    help="Benchmark suite for speaker diarization",
+    name="openbench-cli",
+    help="OpenBench CLI for benchmarking, currently supports transcription, diarization, diarized-transcripts (aka orchestration) and realtime-transcription",
     add_completion=False,
 )
 

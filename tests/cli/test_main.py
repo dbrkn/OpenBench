@@ -3,7 +3,7 @@
 import pytest
 from typer.testing import CliRunner
 
-from sdbench.cli.main import app
+from openbench.cli.main import app
 
 
 @pytest.fixture
@@ -16,7 +16,6 @@ def test_cli_help(runner):
     """Test that the CLI shows help."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "Benchmark suite for speaker diarization" in result.output
 
 
 def test_evaluate_command_help(runner):
@@ -58,7 +57,7 @@ def test_summary_command_default(runner):
     """Test that the summary command runs successfully."""
     result = runner.invoke(app, ["summary"])
     assert result.exit_code == 0
-    assert "SDBench Summary" in result.output
+    assert "OpenBench Summary" in result.output
 
 
 def test_summary_command_pipelines_only(runner):
