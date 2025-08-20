@@ -165,7 +165,7 @@
 | VoxConverse             | 46                       | 39                  | -         | 42       | 38                     | 23        |
 
 </br><br/>
-# Real-time Transcription
+# Real-time Transcription 
 
 ## Benchmarked Systems
 
@@ -221,8 +221,8 @@
 
 | Dataset        | Deepgram<br/>(nova-3) | OpenAI <br/>(GPT-4o) | Gladia |  Argmax <br/>(Parakeet V2) |  Argmax <br/>(Whisper Large V3 Turbo) |
 |----------------|----------|-----------------|----------------------------|---------------------------------------|---------------------------------------|
-| Short-form (timit)          | 2.3                 | 7.42           | 2.26                 | 3.54                      | 2.88                            | 2.77                                 |
-| Long-form <br/>(timit-stitched) | 2.36                | 2.47           | 2.11                 | 2.17                      | 2.3                             | 2.08                                 |
+| Short-form (timit)          | 2.3                 | 7.42           | 2.26                 | 3.54                 | 2.77                            |
+| Long-form <br/>(timit-stitched) | 2.36                | 2.47           | 2.11                 | 2.17             | 2.08                             |
 
 <br/><br/>
 ## Streaming Latency
