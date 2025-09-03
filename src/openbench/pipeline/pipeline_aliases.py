@@ -8,6 +8,7 @@ import os
 from .diarization import (
     AWSTranscribePipeline,
     DeepgramDiarizationPipeline,
+    NeMoSortformerPipeline,
     PicovoicePipeline,
     PyannoteApiPipeline,
     PyAnnotePipeline,
@@ -64,6 +65,21 @@ def register_pipeline_aliases() -> None:
             "use_float16": True,
         },
         description="Pyannote open-source speaker diarization pipeline.",
+    )
+
+    PipelineRegistry.register_alias(
+        "nemo-sortformer",
+        NeMoSortformerPipeline,
+        default_config={
+            "out_dir": "./nemo_sortformer_logs",
+            "use_float16": True,
+            "chunk_size": 340,
+            "right_context": 40,
+            "fifo_size": 40,
+            "update_period": 300,
+            "speaker_cache_size": 188,
+        },
+        description="NeMo Sortformer speaker diarization pipeline.",
     )
 
     PipelineRegistry.register_alias(
