@@ -1,3 +1,2 @@
 # Configuration for keyword F-score metric
-keyword_fscore:
-  keywords_path: "/Users/berkin/Desktop/Projects/OpenBench/earnings22_kws_golden_keywords.txt"
+keyword_fscore: {}

@@ -1,4 +1,4 @@
 OpenAIBoostingPipeline:
   config:
    model_version: "whisper-1"
-   keywords_path: "/Users/berkin/Desktop/Projects/OpenBench/earnings22_kws_golden_keywords.txt"
+   use_dictionary: false

@@ -18,44 +18,20 @@ from ...pipeline_prediction import Transcript
 class BaseKeywordMetric(BaseMetric):
     """Base class for keyword boosting metrics."""
     
-    def __init__(
-        self,
-        keywords_path: str | Path | None = None,
-        keywords: List[str] | None = None,
-    ):
-        """Initialize keyword metric.
-
-        Args:
-            keywords_path: Path to keywords file
-            keywords: List of keywords (alternative to keywords_path)
-        """
+    def __init__(self):
+        """Initialize keyword metric."""
         super().__init__()
         # Use Whisper's BasicTextNormalizer
         from transformers.models.whisper.english_normalizer import BasicTextNormalizer
         self.text_normalizer = BasicTextNormalizer()
-        
-        if keywords_path is not None:
-            keywords_path = Path(keywords_path)
-            with open(keywords_path, 'r') as f:
-                self.keywords = []
-                for line in f:
-                    if line.strip():
-                        # Split by comma and strip whitespace from each keyword
-                        line_keywords = [
-                            kw.strip() for kw in line.strip().split(',')
-                        ]
-                        self.keywords.extend(line_keywords)
-        elif keywords is not None:
-            self.keywords = keywords
-        else:
-            raise ValueError(
-                "Either keywords_path or keywords must be provided"
-            )
 
     def compute_keyword_stats(
-        self, reference: Transcript, hypothesis: Transcript
+        self, reference: Transcript, hypothesis: Transcript, **kwargs
     ) -> Dict[str, Any]:
         """Compute keyword statistics between reference and hypothesis."""
+        # Get keywords from kwargs (passed by the metric framework)
+        keywords = kwargs.get('dictionary', [])
+        
         # Convert transcripts to text
         ref_text = " ".join([word.word for word in reference.words])
         hyp_text = " ".join([word.word for word in hypothesis.words])
@@ -64,7 +40,7 @@ class BaseKeywordMetric(BaseMetric):
         hyp_text = self.text_normalizer(hyp_text)
         
         # Normalize keywords as well
-        normalized_keywords = [self.text_normalizer(kw) for kw in self.keywords]
+        normalized_keywords = [self.text_normalizer(kw) for kw in keywords]
         
         # Get alignment using texterrors
         ref_words = ref_text.split()
@@ -170,7 +146,7 @@ class KeywordFScore(BaseKeywordMetric):
     
     def compute_components(self, reference: Transcript, hypothesis: Transcript, **kwargs) -> Dict[str, int]:
         """Compute keyword F-score components."""
-        stats = self.compute_keyword_stats(reference, hypothesis)
+        stats = self.compute_keyword_stats(reference, hypothesis, **kwargs)
         return {
             "true_positives": stats["true_positives"],
             "ground_truth": stats["ground_truth"],
@@ -207,7 +183,7 @@ class KeywordPrecision(BaseKeywordMetric):
     
     def compute_components(self, reference: Transcript, hypothesis: Transcript, **kwargs) -> Dict[str, int]:
         """Compute keyword precision components."""
-        stats = self.compute_keyword_stats(reference, hypothesis)
+        stats = self.compute_keyword_stats(reference, hypothesis, **kwargs)
         return {
             "true_positives": stats["true_positives"],
             "false_positives": stats["false_positives"]
@@ -238,7 +214,7 @@ class KeywordRecall(BaseKeywordMetric):
 
     def compute_components(self, reference: Transcript, hypothesis: Transcript, **kwargs) -> Dict[str, int]:
         """Compute keyword recall components."""
-        stats = self.compute_keyword_stats(reference, hypothesis)
+        stats = self.compute_keyword_stats(reference, hypothesis, **kwargs)
         return {
             "true_positives": stats["true_positives"],
             "ground_truth": stats["ground_truth"]

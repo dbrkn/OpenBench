@@ -1,3 +1,2 @@
 # Configuration for keyword recall metric
-keyword_recall:
-  keywords_path: "/Users/berkin/Desktop/Projects/OpenBench/earnings22_kws_golden_keywords.txt"
+keyword_recall: {}
