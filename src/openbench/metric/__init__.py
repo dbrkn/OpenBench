@@ -18,3 +18,4 @@ from .streaming_latency_metrics import (
     StreamingLatency,
 )
 from .word_error_metrics import WordDiarizationErrorRate, WordErrorRate
+from . import keyword_boosting_metrics

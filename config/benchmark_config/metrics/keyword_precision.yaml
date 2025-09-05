@@ -1,0 +1,3 @@
+# Configuration for keyword precision metric
+keyword_precision:
+  keywords_path: "/Users/berkin/Desktop/Projects/OpenBench/earnings22_kws_golden_keywords.txt"

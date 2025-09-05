@@ -227,6 +227,15 @@ def register_dataset_aliases() -> None:
     )
 
     DatasetRegistry.register_alias(
+        "kws-golden",
+        DatasetConfig(dataset_id="argmaxinc/earnings22-kws-golden", split="train"),
+        supported_pipeline_types={
+            PipelineType.BOOSTING_TRANSCRIPTION,
+        },
+        description="Earnings22 keyword spotting golden dataset specifically for keyword boosting transcription evaluation.",
+    )
+
+    DatasetRegistry.register_alias(
         "common-voice",
         DatasetConfig(
             dataset_id="argmaxinc/common_voice_17_0-argmax_subset-400-openbench", split="test", subset="full"

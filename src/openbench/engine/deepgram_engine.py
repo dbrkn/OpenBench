@@ -5,6 +5,8 @@ from deepgram import DeepgramClient, FileSource, PrerecordedOptions, Prerecorded
 from httpx import Timeout
 from pydantic import BaseModel, model_validator
 
+from typing import Optional
+
 
 class DeepgramApiResponse(BaseModel):
     words: list[str]
@@ -39,13 +41,14 @@ class DeepgramApi:
         self.client = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
 
     # Only intended to be used with offiline transcription
-    def transcribe(self, audio_path: Path | str) -> DeepgramApiResponse:
+    def transcribe(self, audio_path: Path | str,
+                   keyterm: Optional[str] = None) -> DeepgramApiResponse:
         if isinstance(audio_path, str):
             audio_path = Path(audio_path)
 
         with audio_path.open("rb") as file:
             buffer_data = file.read()
-        payload: FileSource = {"buffer": buffer_data}
+        payload: FileSource = {"buffer": buffer_data, "keywords": keyterm}
 
         response: PrerecordedResponse = self.client.listen.rest.v("1").transcribe_file(
             payload, self.options, timeout=self.timeout

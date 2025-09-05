@@ -12,6 +12,7 @@ class PipelineType(Enum):
     TRANSCRIPTION = auto()
     ORCHESTRATION = auto()
     STREAMING_TRANSCRIPTION = auto()
+    BOOSTING_TRANSCRIPTION = auto()
 
 
 # All prediction classes that we output should conform to this

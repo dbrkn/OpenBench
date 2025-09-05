@@ -10,9 +10,14 @@ defaults:
     - ava-avd
     - timit
     - timit-stitched
+    - kws-golden
+    - kws-debug
   - wandb_config: disabled
   - metrics:
     - wer
+    - keyword_fscore
+    - keyword_precision
+    - keyword_recall
     - streaming_latency
     - confirmed_streaming_latency
     - model_timestamp_streaming_latency

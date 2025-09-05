@@ -1,0 +1,4 @@
+kws-golden:
+  dataset_id: argmaxinc/earnings22-kws-golden
+  split: train
+  subset: null

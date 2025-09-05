@@ -1,0 +1,5 @@
+DeepgramBoostingPipeline:
+  config:
+   model_version: "nova-3"
+   keywords_path: "/Users/berkin/Desktop/Projects/OpenBench/earnings22_kws_golden_keywords.txt"
+   

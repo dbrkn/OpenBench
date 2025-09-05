@@ -8,6 +8,7 @@ from .orchestration import *
 from .pipeline_registry import PipelineRegistry
 from .streaming_transcription import *
 from .transcription import *
+from .keyword_boosting import *
 
 # Import pipeline aliases to register them
 # needs to be imported at the end to avoid circular imports

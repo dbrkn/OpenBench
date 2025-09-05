@@ -94,3 +94,9 @@ class MetricOptions(Enum):
     # Number of Corrections Metrics for Streaming Transcription
     # Evaluates the Number of Insertions Based on Previous Interim Transcript
     NUM_INSERTIONS = "number_insertions"
+
+    # Keyword Boosting Metrics
+    # Evaluates precision, recall and F-score for keyword recognition
+    KEYWORD_FSCORE = "keyword_fscore"
+    KEYWORD_PRECISION = "keyword_precision"
+    KEYWORD_RECALL = "keyword_recall"
