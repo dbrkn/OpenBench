@@ -35,8 +35,7 @@ class DeepgramBoostingPipeline(Pipeline):
     def build_pipeline(self) -> Callable[[Path], DeepgramApiResponse]:
         deepgram_api = DeepgramApi(
             options=PrerecordedOptions(
-                model=self.config.model_version, smart_format=True, diarize=False, detect_language=True
-            )
+                model=self.config.model_version, smart_format=True)
         )
         def transcribe(audio_path: Path) -> DeepgramApiResponse:
             response = deepgram_api.transcribe(audio_path, keyterm=self.current_keywords)
@@ -53,8 +52,8 @@ class DeepgramBoostingPipeline(Pipeline):
         if self.config.use_dictionary:
             keywords = sample.extra_info.get('dictionary', [])
             if keywords:
-                # URL encode keywords for Deepgram
-                self.current_keywords = " ".join("%20".join(kw.split()) for kw in keywords)
+                # Add + between keywords for Deepgram URL
+                self.current_keywords = "+".join(keywords)
         
         # Call parent implementation
         return super().__call__(sample)
