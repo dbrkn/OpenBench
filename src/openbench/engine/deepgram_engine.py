@@ -43,6 +43,14 @@ class DeepgramApi:
     # Only intended to be used with offiline transcription
     def transcribe(self, audio_path: Path | str,
                    keyterm: Optional[str] = None) -> DeepgramApiResponse:
+        
+        # Manually construct URL with keyterm parameter using + separator
+        
+        if keyterm:
+            base_url = "https://api.deepgram.com/v1/listen?model="+self.options.model
+            base_url += f"&keyterm={keyterm}"
+            self.client._config.url = base_url
+
         if isinstance(audio_path, str):
             audio_path = Path(audio_path)
 

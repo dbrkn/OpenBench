@@ -36,11 +36,20 @@ class BaseKeywordMetric(BaseMetric):
         ref_text = " ".join([word.word for word in reference.words])
         hyp_text = " ".join([word.word for word in hypothesis.words])
         
-        # Apply normalization to hypothesis only
+        print(f"Reference text: '{ref_text}'")
+        print(f"Hypothesis text: '{hyp_text}'")
+        print(f"Keywords: {keywords}")
+        
+        # Apply normalization to BOTH reference and hypothesis
+        ref_text = self.text_normalizer(ref_text)
         hyp_text = self.text_normalizer(hyp_text)
         
         # Normalize keywords as well
         normalized_keywords = [self.text_normalizer(kw) for kw in keywords]
+        
+        print(f"Normalized Reference: '{ref_text}'")
+        print(f"Normalized Hypothesis: '{hyp_text}'")
+        print(f"Normalized Keywords: {normalized_keywords}")
         
         # Get alignment using texterrors
         ref_words = ref_text.split()
@@ -59,6 +68,7 @@ class BaseKeywordMetric(BaseMetric):
             key_words_stat[word] = [0, 0, 0]  # [tp, gt, fp]
 
         eps = "<eps>"
+
 
         # 1-grams
         for idx in range(len(ali)):
@@ -119,6 +129,33 @@ class BaseKeywordMetric(BaseMetric):
         tp = sum([key_words_stat[x][0] for x in key_words_stat])
         gt = sum([key_words_stat[x][1] for x in key_words_stat])
         fp = sum([key_words_stat[x][2] for x in key_words_stat])
+
+        print(f"TP: {tp}, FP: {fp}, FN: {gt - tp}")
+        
+        # Print detailed keyword statistics
+        fp_keywords = []
+        for i, keyword in enumerate(normalized_keywords, 1):
+            if keyword in key_words_stat:
+                kw_tp = key_words_stat[keyword][0]
+                kw_gt = key_words_stat[keyword][1]
+                kw_fp = key_words_stat[keyword][2]
+                
+                if kw_gt > 0:  # Only print for keywords that exist in ground truth
+                    if kw_tp > 0:
+                        status = f"TP ({kw_tp}/{kw_gt})"
+                    else:
+                        status = f"FN (0/{kw_gt})"
+                    print(f"{keyword} {i}/{len(normalized_keywords)} - {status}")
+                
+                # Collect FP keywords
+                if kw_fp > 0:
+                    fp_keywords.append(f"{keyword} ({kw_fp})")
+        
+        # Print FP keywords separately
+        if fp_keywords:
+            print(f"FP keywords: {fp_keywords} - FP rate: {fp}/{len(normalized_keywords)}")
+        
+        print("---")
 
         return {
             "true_positives": tp,

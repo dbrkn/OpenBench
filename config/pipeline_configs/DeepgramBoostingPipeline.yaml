@@ -1,5 +1,5 @@
 DeepgramBoostingPipeline:
   config:
    model_version: "nova-3"
-   use_dictionary: false
+   use_dictionary: true
    
