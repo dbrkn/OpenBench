@@ -56,7 +56,7 @@ class DeepgramApi:
 
         with audio_path.open("rb") as file:
             buffer_data = file.read()
-        payload: FileSource = {"buffer": buffer_data, "keywords": keyterm}
+        payload: FileSource = {"buffer": buffer_data}
 
         response: PrerecordedResponse = self.client.listen.rest.v("1").transcribe_file(
             payload, self.options, timeout=self.timeout
