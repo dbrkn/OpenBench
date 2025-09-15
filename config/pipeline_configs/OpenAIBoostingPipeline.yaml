@@ -1,4 +1,4 @@
 OpenAIBoostingPipeline:
   config:
    model_version: "whisper-1"
-   use_dictionary: false
+   boosting: false
