@@ -13,6 +13,7 @@ from typing import Callable
 
 import numpy as np
 import torch
+import librosa
 from pydantic import Field
 
 try:
@@ -214,10 +215,13 @@ class NeMoBoostingPipeline(Pipeline):
             # For Hybrid models, extract CTC logits manually
             with tempfile.TemporaryDirectory() as tmpdir:
                 manifest_path = Path(tmpdir) / "manifest.json"
+
+                audio_duration = librosa.get_duration(path=str(audio_path))
+               
                 with open(manifest_path, "w", encoding="utf-8") as fp:
                     entry = {
                         "audio_filepath": str(audio_path),
-                        "duration": 100000,
+                        "duration": audio_duration,
                         "text": "",
                     }
                     fp.write(json.dumps(entry) + "\n")
