@@ -124,7 +124,6 @@ class GladiaApi:
                     try:
                         content = json.loads(message)
                         message_type = content.get("type")
-                        # Handle transcript messages
                         if message_type == "transcript":
                             data = content.get("data", {})
                             utterance = data.get("utterance", {})
@@ -154,11 +153,10 @@ class GladiaApi:
                                             f"valid timestamps: {text}"
                                         )
                                 else:
-                                    # Final transcript
                                     confirmed_audio_cursor_l.append(
                                         audio_cursor
                                     )
-                                    # Update cumulative transcript with final result
+                                    # Update cumulative transcript
                                     cumulative_transcript = (
                                         cumulative_transcript + " " + text
                                         if cumulative_transcript else text
@@ -201,7 +199,7 @@ class GladiaApi:
         STREAMING_CONFIGURATION: StreamingConfiguration = {
             "encoding": "wav/pcm",
             "sample_rate": self.sample_rate,
-            "bit_depth": self.sample_width * 8,  # Convert bytes to bits
+            "bit_depth": self.sample_width * 8,
             "channels": self.channels,
             "language_config": {
                 "languages": ["es", "ru", "en", "fr"],
@@ -221,7 +219,6 @@ class GladiaApi:
 
         async def send_audio(socket: ClientConnection, data) -> None:
             global audio_cursor
-            # Use chunk size from config converted to seconds
             audio_duration_in_seconds = self.chunk_size_ms / 1000.0
             chunk_size = int(
                 STREAMING_CONFIGURATION["sample_rate"]
@@ -230,16 +227,12 @@ class GladiaApi:
                 * audio_duration_in_seconds
             )
 
-            # Send the audio file in chunks
             offset = 0
             while offset < len(data):
                 try:
-                    # Calculate actual bytes being sent in this chunk
                     actual_chunk_size = min(chunk_size, len(data) - offset)
                     await socket.send(data[offset: offset + actual_chunk_size])
                     offset += actual_chunk_size
-                    
-                    # Calculate actual audio duration for this chunk
                     actual_audio_duration = actual_chunk_size / (
                         STREAMING_CONFIGURATION["sample_rate"]
                         * (STREAMING_CONFIGURATION["bit_depth"] / 8)
@@ -260,7 +253,6 @@ class GladiaApi:
             except Exception as e:
                 logger.error(f"Failed to initialize Gladia session: {e}")
                 raise
-            # Connect to the websocket URL returned by the API
             async with connect(websocket_url) as websocket:
                 try:
                     logger.debug(
