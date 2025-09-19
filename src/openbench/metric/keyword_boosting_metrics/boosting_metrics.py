@@ -12,9 +12,6 @@ from ...types import PipelineType
 from ...pipeline_prediction import Transcript
 
 
-
-
-
 class BaseKeywordMetric(BaseMetric):
     """Base class for keyword boosting metrics."""
     
