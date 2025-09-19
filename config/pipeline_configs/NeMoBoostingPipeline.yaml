@@ -1,0 +1,11 @@
+NeMoBoostingPipeline:
+  config:
+    nemo_model_file: "nvidia/stt_en_fastconformer_ctc_large"  # or hybrid one: stt_en_fastconformer_hybrid_large_streaming_multi
+    decoder_type: "ctc"
+    device: "cpu"
+    acoustic_batch_size: 32
+    beam_threshold: 7.0
+    context_score: 3.0
+    ctc_ali_token_weight: 0.5
+    boosting: true
+    spelling_separator: "_"

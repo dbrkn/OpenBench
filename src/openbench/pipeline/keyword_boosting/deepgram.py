@@ -10,8 +10,6 @@ from ...pipeline_prediction import Transcript
 from ...types import PipelineType
 from .common import BoostingOutput
 
-from typing import Optional
-
 
 TEMP_AUDIO_DIR = Path("temp_audio_dir")
 
@@ -21,7 +19,7 @@ class DeepgramBoostingPipelineConfig(PipelineConfig):
         default="base",
         description="The version of the Deepgram model to use",
     )
-    use_dictionary: bool = Field(
+    boosting: bool = Field(
         default=True,
         description="Whether to use keywords boosting",
     )
@@ -37,24 +35,27 @@ class DeepgramBoostingPipeline(Pipeline):
             options=PrerecordedOptions(
                 model=self.config.model_version, smart_format=True)
         )
+
         def transcribe(audio_path: Path) -> DeepgramApiResponse:
-            response = deepgram_api.transcribe(audio_path, keyterm=self.current_keywords)
+            response = deepgram_api.transcribe(
+                audio_path, keyterm=self.current_keywords
+            )
             # Remove temporary audio path
             audio_path.unlink(missing_ok=True)
             return response
 
         return transcribe
-    
+
     def __call__(self, sample) -> BoostingOutput:
         """Override to extract keywords from sample before processing."""
         # Extract keywords from sample's extra_info if flag is enabled
         self.current_keywords = None
-        if self.config.use_dictionary:
+        if self.config.boosting:
             keywords = sample.extra_info.get('dictionary', [])
             if keywords:
                 # Add + between keywords for Deepgram URL
                 self.current_keywords = "+".join(keywords)
-        
+
         # Call parent implementation
         return super().__call__(sample)
 

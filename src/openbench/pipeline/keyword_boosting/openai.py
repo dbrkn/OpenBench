@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 from pydantic import Field
 
@@ -18,7 +18,7 @@ class OpenAIBoostingPipelineConfig(PipelineConfig):
         default="whisper-1",
         description="The version of the OpenAI model to use",
     )
-    use_dictionary: bool = Field(
+    boosting: bool = Field(
         default=True,
         description="Whether to use keyword prompting",
     )
@@ -42,17 +42,17 @@ class OpenAIBoostingPipeline(Pipeline):
             return response
 
         return transcribe
-    
+
     def __call__(self, sample) -> BoostingOutput:
         """Override to extract keywords from sample before processing."""
         # Extract keywords from sample's extra_info if flag is enabled
         self.current_keywords_prompt = None
-        if self.config.use_dictionary:
+        if self.config.boosting:
             keywords = sample.extra_info.get('dictionary', [])
             if keywords:
                 # Format keywords as comma-separated prompt for OpenAI
                 self.current_keywords_prompt = ", ".join(keywords)
-        
+
         # Call parent implementation
         return super().__call__(sample)
 
