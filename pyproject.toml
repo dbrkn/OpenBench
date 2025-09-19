@@ -33,6 +33,8 @@ dependencies = [
     "rich>=13.0.0,<14",
     "deepgram-sdk>=4.8.0",
     "groq>=0.31.0",
+    "texterrors>=0.4.4",
+    "openai>=1.0.0",
 ]
 
 [project.scripts]
