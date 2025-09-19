@@ -62,7 +62,7 @@ class NeMoBoostingPipelineConfig(PipelineConfig):
         default=0.6,
         description="Weight of CTC tokens to prevent false accept errors",
     )
-    boosting: bool = Field(
+    use_dictionary: bool = Field(
         default=True, description="Whether to use keyword boosting"
     )
     spelling_separator: str = Field(
@@ -253,7 +253,7 @@ class NeMoBoostingPipeline(Pipeline):
 
         # Extract keywords from sample's extra_info if flag is enabled
         self.context_graph = None
-        if self.config.boosting:
+        if self.config.use_dictionary:
             keywords = sample.extra_info.get("dictionary", [])
             if keywords:
                 context_transcripts = []
