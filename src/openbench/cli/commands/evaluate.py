@@ -174,6 +174,7 @@ def run_alias_mode(
     wandb_project: str,
     wandb_run_name: str | None,
     wandb_tags: list[str] | None,
+    use_keywords: bool | None,
     verbose: bool,
 ) -> BenchmarkResult:
     """Run evaluation using pipeline and dataset aliases."""
@@ -192,7 +193,18 @@ def run_alias_mode(
 
         ######### Build Pipeline #########
         typer.echo(f"🔧 Creating pipeline: {pipeline_name}")
-        pipeline = PipelineRegistry.create_pipeline(pipeline_name)
+        
+        # Handle use_keywords override
+        pipeline_config_override = {}
+        if use_keywords is not None:
+            pipeline_config_override["use_keywords"] = use_keywords
+            if verbose:
+                typer.echo(f"✅ Keywords: {'enabled' if use_keywords else 'disabled'} (override)")
+
+        pipeline = PipelineRegistry.create_pipeline(
+            pipeline_name,
+            config=pipeline_config_override if pipeline_config_override else None
+        )
 
         ######### Build Benchmark Config #########
         typer.echo(f"📊 Loading dataset: {dataset_name}")
@@ -319,6 +331,11 @@ def evaluate(
         None, "--wandb-run-name", "-wr", help="W&B run name to use for evaluation"
     ),
     wandb_tags: list[str] | None = typer.Option(None, "--wandb-tags", "-wt", help="W&B tags to use for evaluation"),
+    use_keywords: bool | None = typer.Option(
+        None,
+        "--use-keywords",
+        help="Enable keyword boosting for compatible pipelines (overrides default config)",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 ) -> None:
     """Run evaluation benchmarks.
@@ -378,6 +395,7 @@ def evaluate(
                 wandb_project=wandb_project,
                 wandb_run_name=wandb_run_name,
                 wandb_tags=wandb_tags,
+                use_keywords=use_keywords,
                 verbose=verbose,
             )
         display_result(result)

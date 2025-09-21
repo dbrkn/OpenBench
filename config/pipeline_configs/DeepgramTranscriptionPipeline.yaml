@@ -1,0 +1,5 @@
+DeepgramPipeline:
+  config:
+   model_version: "nova-3"
+   use_keywords: true
+   
