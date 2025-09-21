@@ -6,7 +6,7 @@ from .common import TranscriptionOutput
 from .transcription_groq import GroqTranscriptionConfig, GroqTranscriptionPipeline
 from .transcription_whisperkitpro import WhisperKitProTranscriptionConfig, WhisperKitProTranscriptionPipeline
 from .whisperkit import WhisperKitTranscriptionConfig, WhisperKitTranscriptionPipeline
-from .transcription_opena import OpenAITranscriptionPipelineConfig, OpenAITranscriptionPipeline
+from .transcription_openai import OpenAITranscriptionPipelineConfig, OpenAITranscriptionPipeline
 from .transcription_deepgram import DeepgramTranscriptionPipelineConfig, DeepgramTranscriptionPipeline
 from .transcription_nemo import NeMoTranscriptionPipelineConfig, NeMoTranscriptionPipeline
 
