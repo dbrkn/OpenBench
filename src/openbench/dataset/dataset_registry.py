@@ -9,7 +9,7 @@ from .dataset_base import BaseDataset, DatasetConfig
 from .dataset_diarization import DiarizationDataset
 from .dataset_orchestration import OrchestrationDataset
 from .dataset_streaming_transcription import StreamingDataset
-from .dataset_transcription import TranscriptionDataset, KeywordSpottingDataset
+from .dataset_transcription import TranscriptionDataset
 
 
 @dataclass
@@ -112,4 +112,3 @@ DatasetRegistry.register(PipelineType.DIARIZATION, DiarizationDataset)
 DatasetRegistry.register(PipelineType.ORCHESTRATION, OrchestrationDataset)
 DatasetRegistry.register(PipelineType.STREAMING_TRANSCRIPTION, StreamingDataset)
 DatasetRegistry.register(PipelineType.TRANSCRIPTION, TranscriptionDataset)
-DatasetRegistry.register(PipelineType.TRANSCRIPTION, KeywordSpottingDataset)
