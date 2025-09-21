@@ -36,6 +36,8 @@ dependencies = [
     "nemo-toolkit[asr]",
     "deepgram-sdk>=4.8.0",
     "groq>=0.31.0",
+    "openai==1.108.0",
+    "texterrors==0.5.1",
 ]
 
 [project.scripts]
