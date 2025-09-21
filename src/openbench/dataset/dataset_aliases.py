@@ -228,7 +228,7 @@ def register_dataset_aliases() -> None:
 
     DatasetRegistry.register_alias(
         "kws-golden",
-        DatasetConfig(dataset_id="argmaxinc/earnings22-kws-golden", split="train"),
+        DatasetConfig(dataset_id="argmaxinc/earnings22-kws-golden", split="test"),
         supported_pipeline_types={
             PipelineType.TRANSCRIPTION,
         },
@@ -237,7 +237,7 @@ def register_dataset_aliases() -> None:
 
     DatasetRegistry.register_alias(
         "kws-debug",
-        DatasetConfig(dataset_id="argmaxinc/kws-temp", split="test", num_samples=5),
+        DatasetConfig(dataset_id="argmaxinc/earnings22-kws-golden", split="test", num_samples=5),
         supported_pipeline_types={
             PipelineType.TRANSCRIPTION,
         },
