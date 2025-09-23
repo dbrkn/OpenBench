@@ -16,7 +16,7 @@ TEMP_AUDIO_DIR = Path("temp_audio_dir")
 
 class DeepgramTranscriptionPipelineConfig(TranscriptionConfig):
     model_version: str = Field(
-        default="base",
+        default="nova-3",
         description="The version of the Deepgram model to use",
     )
 
