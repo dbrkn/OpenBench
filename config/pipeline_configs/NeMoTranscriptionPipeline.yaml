@@ -1,4 +1,4 @@
-NeMoPipeline:
+NeMoTranscriptionPipeline:
   config:
     nemo_model_file: "nvidia/stt_en_fastconformer_ctc_large"  # or hybrid one: stt_en_fastconformer_hybrid_large_streaming_multi
     decoder_type: "ctc"

@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional
 
 from openai import OpenAI
 from pydantic import BaseModel, model_validator
@@ -8,7 +7,6 @@ from pydantic import BaseModel, model_validator
 
 class OpenAIApiResponse(BaseModel):
     words: list[str]
-    speakers: list[str]
     start: list[float]
     end: list[float]
 
@@ -19,8 +17,7 @@ class OpenAIApiResponse(BaseModel):
     @model_validator(mode="after")
     def validate_lengths(self) -> "OpenAIApiResponse":
         if (
-            len(self.words) != len(self.speakers)
-            or len(self.words) != len(self.start)
+            len(self.words) != len(self.start)
             or len(self.words) != len(self.end)
         ):
             raise ValueError("All lists must be of the same length")
@@ -38,7 +35,7 @@ class OpenAIApi:
         self.client = OpenAI()
 
     def transcribe(
-        self, audio_path: Path | str, prompt: Optional[str] = None
+        self, audio_path: Path | str, prompt: str | None = None
     ) -> OpenAIApiResponse:
         if isinstance(audio_path, str):
             audio_path = Path(audio_path)
@@ -86,7 +83,6 @@ class OpenAIApi:
 
         return OpenAIApiResponse(
             words=words,
-            speakers=speakers,
             start=start_times,
             end=end_times,
         )

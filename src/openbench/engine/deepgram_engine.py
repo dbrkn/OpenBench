@@ -41,6 +41,9 @@ class DeepgramApi:
     # Only intended to be used with offiline transcription
     def transcribe(self, audio_path: Path | str, keyterm: str | None = None) -> DeepgramApiResponse:
         # Manually construct URL with keyterm parameter using + separator
+        # Setting the keyterms in the payload as an option produced the same results
+        # as not including them at all
+        # Therefore, the keyterms are explicitly set in the URL instead.
         if keyterm:
             base_url = "https://api.deepgram.com/v1/listen?model=" + self.options.model
             base_url += f"&keyterm={keyterm}"

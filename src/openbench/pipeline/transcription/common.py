@@ -12,6 +12,10 @@ class TranscriptionConfig(PipelineConfig):
     force_language: bool = Field(
         False, description="Force the language of the audio files i.e. hint the model to use the correct language."
     )
+    use_keywords: bool = Field(
+        False,
+        description="Whether to use keyword boosting/prompting for transcription.",
+    )
 
 
 class TranscriptionOutput(PipelineOutput[Transcript]):

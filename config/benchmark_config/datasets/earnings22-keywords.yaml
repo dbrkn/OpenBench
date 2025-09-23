@@ -1,5 +1,4 @@
-kws-golden:
+earnings22-keywords:
   dataset_id: argmaxinc/earnings22-kws-golden
   split: test
   subset: null
-  num_samples: 5

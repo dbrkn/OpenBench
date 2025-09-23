@@ -5,23 +5,19 @@ from deepgram import PrerecordedOptions
 from pydantic import Field
 
 from ...engine import DeepgramApi, DeepgramApiResponse
-from ...pipeline import Pipeline, PipelineConfig, register_pipeline
+from ...pipeline import Pipeline, register_pipeline
 from ...pipeline_prediction import Transcript
 from ...types import PipelineType
-from .common import TranscriptionOutput
+from .common import TranscriptionConfig, TranscriptionOutput
 
 
 TEMP_AUDIO_DIR = Path("temp_audio_dir")
 
 
-class DeepgramTranscriptionPipelineConfig(PipelineConfig):
+class DeepgramTranscriptionPipelineConfig(TranscriptionConfig):
     model_version: str = Field(
         default="base",
         description="The version of the Deepgram model to use",
-    )
-    use_keywords: bool = Field(
-        default=True,
-        description="Whether to use keywords boosting",
     )
 
 
@@ -46,20 +42,15 @@ class DeepgramTranscriptionPipeline(Pipeline):
 
         return transcribe
 
-    def __call__(self, sample) -> TranscriptionOutput:
+    def parse_input(self, input_sample) -> Path:
         """Override to extract keywords from sample before processing."""
-        # Extract keywords from sample's extra_info if flag is enabled
         self.current_keywords = None
         if self.config.use_keywords:
-            keywords = sample.extra_info.get('dictionary', [])
+            keywords = input_sample.extra_info.get('dictionary', [])
             if keywords:
                 # Add + between keywords for Deepgram URL
                 self.current_keywords = "+".join(keywords)
 
-        # Call parent implementation
-        return super().__call__(sample)
-
-    def parse_input(self, input_sample) -> Path:
         return input_sample.save_audio(TEMP_AUDIO_DIR)
 
     def parse_output(self, output: DeepgramApiResponse) -> TranscriptionOutput:

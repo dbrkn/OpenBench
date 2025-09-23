@@ -1,0 +1,2 @@
+# Configuration for keyword F-score metric
+keyword_fscore: {}

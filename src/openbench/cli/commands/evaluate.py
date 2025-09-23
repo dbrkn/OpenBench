@@ -193,7 +193,7 @@ def run_alias_mode(
 
         ######### Build Pipeline #########
         typer.echo(f"🔧 Creating pipeline: {pipeline_name}")
-        
+
         # Handle use_keywords override
         pipeline_config_override = {}
         if use_keywords is not None:
@@ -203,7 +203,7 @@ def run_alias_mode(
 
         pipeline = PipelineRegistry.create_pipeline(
             pipeline_name,
-            config=pipeline_config_override if pipeline_config_override else None
+            config=pipeline_config_override
         )
 
         ######### Build Benchmark Config #########

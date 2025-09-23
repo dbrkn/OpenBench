@@ -16,28 +16,25 @@ import torch
 import librosa
 from pydantic import Field
 
-try:
-    import nemo.collections.asr as nemo_asr
-    from nemo.collections.asr.models import (
-        EncDecCTCModelBPE,
-        EncDecHybridRNNTCTCModel,
-    )
-    from nemo.collections.asr.parts import context_biasing
-    from nemo.utils import logging
-    NEMO_AVAILABLE = True
-except ImportError:
-    NEMO_AVAILABLE = False
+import nemo.collections.asr as nemo_asr
+from nemo.collections.asr.models import (
+    EncDecCTCModelBPE,
+    EncDecHybridRNNTCTCModel,
+)
+from nemo.collections.asr.parts import context_biasing
+from nemo.utils import logging
 
-from ...pipeline import Pipeline, PipelineConfig, register_pipeline
+
+from ...pipeline import Pipeline, register_pipeline
 from ...pipeline_prediction import Transcript
 from ...types import PipelineType
-from .common import TranscriptionOutput
+from .common import TranscriptionConfig, TranscriptionOutput
 
 
 TEMP_AUDIO_DIR = Path("temp_audio_dir")
 
 
-class NeMoTranscriptionPipelineConfig(PipelineConfig):
+class NeMoTranscriptionPipelineConfig(TranscriptionConfig):
     """Configuration for NeMo Context Biasing Pipeline."""
 
     nemo_model_file: str = Field(
@@ -62,9 +59,6 @@ class NeMoTranscriptionPipelineConfig(PipelineConfig):
         default=0.6,
         description="Weight of CTC tokens to prevent false accept errors",
     )
-    use_keywords: bool = Field(
-        default=True, description="Whether to use keyword boosting"
-    )
     spelling_separator: str = Field(
         default="_",
         description="Separator between word and its spellings",
@@ -79,19 +73,10 @@ class NeMoTranscriptionPipeline(Pipeline):
     pipeline_type = PipelineType.TRANSCRIPTION
 
     def __init__(self, config: NeMoTranscriptionPipelineConfig) -> None:
-        # Store the availability check for later use
-        self._nemo_available = NEMO_AVAILABLE
         super().__init__(config)
 
     def build_pipeline(self) -> Callable[[Path], TranscriptionOutput]:
         """Build the NeMo ASR pipeline with context biasing."""
-
-        # Check NeMo availability
-        if not self._nemo_available:
-            raise ImportError(
-                "NeMo is not available. Please install NeMo: "
-                "pip install 'nemo-toolkit[asr]'"
-            )
 
         # Load NeMo ASR model
         if self.config.nemo_model_file.endswith(".nemo"):
@@ -248,13 +233,12 @@ class NeMoTranscriptionPipeline(Pipeline):
                         0, : encoded_len[0]
                     ].detach().cpu().numpy()
 
-    def __call__(self, sample) -> TranscriptionOutput:
+    def parse_input(self, input_sample) -> Path:
         """Override to extract keywords from sample before processing."""
-
         # Extract keywords from sample's extra_info if flag is enabled
         self.context_graph = None
         if self.config.use_keywords:
-            keywords = sample.extra_info.get("dictionary", [])
+            keywords = input_sample.extra_info.get("dictionary", [])
             if keywords:
                 context_transcripts = []
                 for keyword in keywords:
@@ -271,9 +255,6 @@ class NeMoTranscriptionPipeline(Pipeline):
                     )
                     self.context_graph.add_to_graph(context_transcripts)
 
-        return super().__call__(sample)
-
-    def parse_input(self, input_sample) -> Path:
         return input_sample.save_audio(TEMP_AUDIO_DIR)
 
     def parse_output(self, output: TranscriptionOutput) -> TranscriptionOutput:

@@ -1,9 +1,6 @@
-import os
-import json
-from typing import List, Dict, Any
+from typing import Any
 import texterrors
-import logging
-from pathlib import Path
+from argmaxtools.utils import logger
 
 from pyannote.metrics.base import BaseMetric
 from ..registry import MetricRegistry
@@ -11,13 +8,10 @@ from ..metric import MetricOptions
 from ...types import PipelineType
 from ...pipeline_prediction import Transcript
 
-# Set up logger for keyword boosting metrics
-logger = logging.getLogger(__name__)
-
 
 class BaseKeywordMetric(BaseMetric):
     """Base class for keyword boosting metrics."""
-    
+
     def __init__(self):
         """Initialize keyword metric."""
         super().__init__()
@@ -26,36 +20,38 @@ class BaseKeywordMetric(BaseMetric):
         self.text_normalizer = BasicTextNormalizer()
 
     def compute_keyword_stats(
-        self, reference: Transcript, hypothesis: Transcript, **kwargs
-    ) -> Dict[str, Any]:
+        self, reference: Transcript, hypothesis: Transcript, dictionary: list[str]
+    ) -> dict[str, Any]:
         """Compute keyword statistics between reference and hypothesis."""
-        # Get keywords from kwargs (passed by the metric framework)
-        keywords = kwargs.get('dictionary', [])
-        
+
         # Convert transcripts to text
-        ref_text = " ".join([word.word for word in reference.words])
-        hyp_text = " ".join([word.word for word in hypothesis.words])
-        
+        ref_text = reference.get_transcript_string()
+        hyp_text = hypothesis.get_transcript_string()
+
         logger.debug(f"Reference text: '{ref_text}'")
         logger.debug(f"Hypothesis text: '{hyp_text}'")
-        logger.debug(f"Keywords: {keywords}")
-        
+        logger.debug(f"Keywords: {dictionary}")
+
         # Apply normalization to BOTH reference and hypothesis
         ref_text = self.text_normalizer(ref_text)
         hyp_text = self.text_normalizer(hyp_text)
-        
+
         # Normalize keywords as well
-        normalized_keywords = [self.text_normalizer(kw) for kw in keywords]
-        
+        normalized_keywords = [self.text_normalizer(kw) for kw in dictionary]
+
         logger.debug(f"Normalized Reference: '{ref_text}'")
         logger.debug(f"Normalized Hypothesis: '{hyp_text}'")
         logger.debug(f"Normalized Keywords: {normalized_keywords}")
-        
+
         # Get alignment using texterrors
         ref_words = ref_text.split()
         hyp_words = hyp_text.split()
+        # Word-level alignment between reference and hypothesis text
+        # returns two aligned sequences where insertions/deletions are
+        # marked with <eps> tokens. This alignment is crucial for accurate keyword matching
+        # as it ensures we compare the right words even when there are transcription errors.
         texterrors_ali = texterrors.align_texts(ref_words, hyp_words, False)
-        
+
         # Create alignment pairs
         ali = []
         for i in range(len(texterrors_ali[0])):
@@ -182,17 +178,17 @@ class KeywordFScore(BaseKeywordMetric):
             "false_positives"
         ]
     
-    def compute_components(self, reference: Transcript, hypothesis: Transcript, **kwargs) -> Dict[str, int]:
+    def compute_components(self, reference: Transcript, hypothesis: Transcript, dictionary: list[str]) -> dict[str, int]:
         """Compute keyword F-score components."""
         logger.debug("Computing KeywordFScore components")
-        stats = self.compute_keyword_stats(reference, hypothesis, **kwargs)
+        stats = self.compute_keyword_stats(reference, hypothesis, dictionary)
         return {
             "true_positives": stats["true_positives"],
             "ground_truth": stats["ground_truth"],
             "false_positives": stats["false_positives"]
         }
     
-    def compute_metric(self, detail: Dict[str, int]) -> float:
+    def compute_metric(self, detail: dict[str, int]) -> float:
         """Compute F-score from components."""
         tp = detail["true_positives"]
         gt = detail["ground_truth"] 
@@ -221,16 +217,16 @@ class KeywordPrecision(BaseKeywordMetric):
             "false_positives"
         ]
     
-    def compute_components(self, reference: Transcript, hypothesis: Transcript, **kwargs) -> Dict[str, int]:
+    def compute_components(self, reference: Transcript, hypothesis: Transcript, dictionary: list[str]) -> dict[str, int]:
         """Compute keyword precision components."""
         logger.debug("Computing KeywordPrecision components")
-        stats = self.compute_keyword_stats(reference, hypothesis, **kwargs)
+        stats = self.compute_keyword_stats(reference, hypothesis, dictionary)
         return {
             "true_positives": stats["true_positives"],
             "false_positives": stats["false_positives"]
         }
     
-    def compute_metric(self, detail: Dict[str, int]) -> float:
+    def compute_metric(self, detail: dict[str, int]) -> float:
         """Compute precision from components."""
         tp = detail["true_positives"]
         fp = detail["false_positives"]
@@ -256,16 +252,16 @@ class KeywordRecall(BaseKeywordMetric):
             "ground_truth"
         ]
 
-    def compute_components(self, reference: Transcript, hypothesis: Transcript, **kwargs) -> Dict[str, int]:
+    def compute_components(self, reference: Transcript, hypothesis: Transcript, dictionary: list[str]) -> dict[str, int]:
         """Compute keyword recall components."""
         logger.debug("Computing KeywordRecall components")
-        stats = self.compute_keyword_stats(reference, hypothesis, **kwargs)
+        stats = self.compute_keyword_stats(reference, hypothesis, dictionary)
         return {
             "true_positives": stats["true_positives"],
             "ground_truth": stats["ground_truth"]
         }
 
-    def compute_metric(self, detail: Dict[str, int]) -> float:
+    def compute_metric(self, detail: dict[str, int]) -> float:
         """Compute recall from components."""
         tp = detail["true_positives"]
         gt = detail["ground_truth"]

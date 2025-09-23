@@ -456,7 +456,7 @@ def register_pipeline_aliases() -> None:
     )
 
     PipelineRegistry.register_alias(
-        "nemo-transcription",
+        "nemo-transcription-ctc-large",
         NeMoTranscriptionPipeline,
         default_config={
             "out_dir": "./nemo_keywords_results",
