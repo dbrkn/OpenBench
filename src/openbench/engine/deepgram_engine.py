@@ -39,7 +39,7 @@ class DeepgramApi:
         self.client = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
 
     # Only intended to be used with offiline transcription
-    def transcribe(self, audio_path: Path | str, keyterm: Optional[str] = None) -> DeepgramApiResponse:
+    def transcribe(self, audio_path: Path | str, keyterm: str | None = None) -> DeepgramApiResponse:
         # Manually construct URL with keyterm parameter using + separator
         if keyterm:
             base_url = "https://api.deepgram.com/v1/listen?model=" + self.options.model
