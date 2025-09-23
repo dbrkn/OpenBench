@@ -27,7 +27,10 @@ from .streaming_transcription import (
     OpenAIStreamingPipeline,
 )
 from .transcription import (
+    DeepgramTranscriptionPipeline,
     GroqTranscriptionPipeline,
+    NeMoTranscriptionPipeline,
+    OpenAITranscriptionPipeline,
     SpeechAnalyzerPipeline,
     WhisperKitProTranscriptionPipeline,
     WhisperKitTranscriptionPipeline,
@@ -426,6 +429,48 @@ def register_pipeline_aliases() -> None:
             "force_language": False,
         },
         description="Groq transcription pipeline using the whisper-large-v3 model. Requires `GROQ_API_KEY` env var.",
+    )
+
+    ################# KEYWORD-ENABLED TRANSCRIPTION PIPELINES #################
+
+    PipelineRegistry.register_alias(
+        "openai-transcription",
+        OpenAITranscriptionPipeline,
+        default_config={
+            "out_dir": "./openai_keywords_results",
+            "model_version": "whisper-1",
+            "use_keywords": False,
+        },
+        description="OpenAI Whisper transcription with keyword boosting. Requires `OPENAI_API_KEY` env var.",
+    )
+
+    PipelineRegistry.register_alias(
+        "deepgram-transcription",
+        DeepgramTranscriptionPipeline,
+        default_config={
+            "out_dir": "./deepgram_keywords_results",
+            "model_version": "nova-3",
+            "use_keywords": False,
+        },
+        description="Deepgram transcription with keyword boosting. Requires `DEEPGRAM_API_KEY` env var.",
+    )
+
+    PipelineRegistry.register_alias(
+        "nemo-transcription-ctc-large",
+        NeMoTranscriptionPipeline,
+        default_config={
+            "out_dir": "./nemo_keywords_results",
+            "nemo_model_file": "nvidia/stt_en_fastconformer_ctc_large",
+            "decoder_type": "ctc",
+            "device": "cpu",
+            "acoustic_batch_size": 32,
+            "beam_threshold": 7.0,
+            "context_score": 3.0,
+            "ctc_ali_token_weight": 0.5,
+            "use_keywords": False,
+            "spelling_separator": "_",
+        },
+        description="NeMo CTC transcription with context biasing for keyword spotting. Local model, no API key required.",
     )
 
     ################# STREAMING TRANSCRIPTION PIPELINES #################

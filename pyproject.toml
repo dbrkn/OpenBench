@@ -8,6 +8,7 @@ readme = "README.md"
 dependencies = [
     "black>=24.10.0,<25",
     "pydantic>=2.9.2,<3",
+    "numpy>=1.24.0,<2.0",
     "numba~=0.60.0",
     "llvmlite==0.43.0",
     "pyannote-audio>=3.3.2,<4",
@@ -36,6 +37,8 @@ dependencies = [
     "nemo-toolkit[asr]",
     "deepgram-sdk>=4.8.0",
     "groq>=0.31.0",
+    "openai==1.108.0",
+    "texterrors==0.5.1",
 ]
 
 [project.scripts]

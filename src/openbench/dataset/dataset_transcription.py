@@ -11,19 +11,25 @@ class TranscriptionExtraInfo(TypedDict, total=False):
     """Extra info for transcription samples."""
 
     language: str
+    dictionary: list[str]
 
 
 class TranscriptionSample(BaseSample[Transcript, TranscriptionExtraInfo]):
-    """Transcription sample for pure transcription tasks."""
+    """Transcription sample for transcription tasks with optional keyword support."""
 
     @property
     def language(self) -> str | None:
         """Convenience property to access language from extra_info."""
         return self.extra_info.get("language")
 
+    @property
+    def dictionary(self) -> list[str] | None:
+        """Convenience property to access dictionary from extra_info."""
+        return self.extra_info.get("dictionary")
+
 
 class TranscriptionDataset(BaseDataset[TranscriptionSample]):
-    """Dataset for transcription pipelines."""
+    """Dataset for transcription pipelines with optional keyword support."""
 
     _expected_columns = ["audio", "transcript"]
     _sample_class = TranscriptionSample
@@ -40,4 +46,6 @@ class TranscriptionDataset(BaseDataset[TranscriptionSample]):
         extra_info: TranscriptionExtraInfo = {}
         if "language" in row:
             extra_info["language"] = row["language"]
+        if "dictionary" in row:
+            extra_info["dictionary"] = row["dictionary"]
         return reference, extra_info

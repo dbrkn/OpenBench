@@ -1,0 +1,4 @@
+OpenAITranscriptionPipeline:
+  config:
+   model_version: "whisper-1"
+   use_keywords: false
