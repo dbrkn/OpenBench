@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional
 
 from deepgram import DeepgramClient, FileSource, PrerecordedOptions, PrerecordedResponse
 from httpx import Timeout
