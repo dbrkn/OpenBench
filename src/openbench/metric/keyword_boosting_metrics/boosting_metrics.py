@@ -26,6 +26,9 @@ class BaseKeywordMetric(BaseMetric):
     ) -> dict[str, Any]:
         """Compute keyword statistics between reference and hypothesis."""
 
+        if not dictionary:
+            return {"true_positives": 0, "ground_truth": 0, "false_positives": 0, "keyword_stats": {}}
+
         # Convert transcripts to text
         ref_text = reference.get_transcript_string()
         hyp_text = hypothesis.get_transcript_string()

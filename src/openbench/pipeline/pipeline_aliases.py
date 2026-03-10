@@ -26,6 +26,11 @@ from .orchestration import (
 )
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
+    CartesiaSpeechGenerationPipeline,
+    ElevenLabsDialogueGenerationPipeline,
+    ElevenLabsSpeechGenerationPipeline,
+    GeminiSpeechGenerationPipeline,
+    OpenAISpeechGenerationPipeline,
     WhisperKitSpeechGenerationPipeline,
 )
 from .streaming_transcription import (
@@ -666,6 +671,107 @@ def register_pipeline_aliases() -> None:
         description="WhisperKit speech generation pipeline. Generates audio from text prompts using whisperkit-cli TTS, "
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires `WHISPERKIT_CLI_PATH` env var pointing to the whisperkit-cli binary.",
+    )
+
+    PipelineRegistry.register_alias(
+        "elevenlabs-speech-generation",
+        ElevenLabsSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+            "model_id": "eleven_multilingual_v2",
+            "output_format": "mp3_44100_128",
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="ElevenLabs speech generation pipeline. Generates audio from text prompts using ElevenLabs TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
+    )
+
+    PipelineRegistry.register_alias(
+        "openai-speech-generation",
+        OpenAISpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model": "gpt-4o-mini-tts",
+            "voice": "coral",
+            "response_format": "wav",
+            "speed": 1.0,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="OpenAI speech generation pipeline. Generates audio from text prompts using OpenAI TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `OPENAI_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
+    )
+
+    PipelineRegistry.register_alias(
+        "gemini-speech-generation",
+        GeminiSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "voice_name": "Charon",
+            "language_code": "en-US",
+            "model_name": "gemini-2.5-pro-tts",
+            "audio_encoding": "MP3",
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="Google Gemini speech generation pipeline. Generates audio from text prompts using Google Cloud TTS, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires Google Cloud credentials and `WHISPERKITPRO_CLI_PATH` env var.",
+    )
+
+    PipelineRegistry.register_alias(
+        "cartesia-speech-generation",
+        CartesiaSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model_id": "sonic-3",
+            "voice_id": "e07c00bc-4134-4eae-9ea4-1a55fb45746b",
+            "container": "wav",
+            "encoding": "pcm_f32le",
+            "sample_rate": 44100,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="Cartesia speech generation pipeline. Generates audio from text prompts using Cartesia TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `CARTESIA_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
+    )
+
+    PipelineRegistry.register_alias(
+        "elevenlabs-dialogue-generation",
+        ElevenLabsDialogueGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model_id": "eleven_v3",
+            "speaker_voice_map": {
+                "doctor": "9BWtsMINqrJLrRacOk9x",
+                "patient": "IKne3meq5aSn9XLyUdCD",
+                "assistant": "pFZP5JQG7iQjIQuC4Bku",
+            },
+            "default_voice_id": "9BWtsMINqrJLrRacOk9x",
+            "max_chars_per_chunk": 4500,
+            "chunk_silence_duration": 0.75,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="ElevenLabs dialogue generation pipeline. Generates multi-speaker conversational audio "
+        "from dialogue turns using ElevenLabs text_to_dialogue API, then transcribes the generated "
+        "audio to compute WER against the original dialogue text. "
+        "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
 
     ################# STREAMING TRANSCRIPTION PIPELINES #################
