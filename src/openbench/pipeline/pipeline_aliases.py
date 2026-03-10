@@ -26,6 +26,7 @@ from .orchestration import (
 )
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
+    OpenAISpeechGenerationPipeline,
     WhisperKitSpeechGenerationPipeline,
 )
 from .streaming_transcription import (
@@ -666,6 +667,25 @@ def register_pipeline_aliases() -> None:
         description="WhisperKit speech generation pipeline. Generates audio from text prompts using whisperkit-cli TTS, "
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires `WHISPERKIT_CLI_PATH` env var pointing to the whisperkit-cli binary.",
+    )
+
+    PipelineRegistry.register_alias(
+        "openai-speech-generation",
+        OpenAISpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model": "gpt-4o-mini-tts",
+            "voice": "coral",
+            "response_format": "wav",
+            "speed": 1.0,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="OpenAI speech generation pipeline. Generates audio from text prompts using OpenAI TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `OPENAI_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
 
     ################# STREAMING TRANSCRIPTION PIPELINES #################
