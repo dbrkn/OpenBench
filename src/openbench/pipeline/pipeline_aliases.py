@@ -26,6 +26,7 @@ from .orchestration import (
 )
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
+    ElevenLabsSpeechGenerationPipeline,
     WhisperKitSpeechGenerationPipeline,
 )
 from .streaming_transcription import (
@@ -666,6 +667,24 @@ def register_pipeline_aliases() -> None:
         description="WhisperKit speech generation pipeline. Generates audio from text prompts using whisperkit-cli TTS, "
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires `WHISPERKIT_CLI_PATH` env var pointing to the whisperkit-cli binary.",
+    )
+
+    PipelineRegistry.register_alias(
+        "elevenlabs-speech-generation",
+        ElevenLabsSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+            "model_id": "eleven_multilingual_v2",
+            "output_format": "mp3_44100_128",
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="ElevenLabs speech generation pipeline. Generates audio from text prompts using ElevenLabs TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
 
     ################# STREAMING TRANSCRIPTION PIPELINES #################
