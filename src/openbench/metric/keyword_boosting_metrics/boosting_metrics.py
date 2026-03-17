@@ -21,22 +21,63 @@ class BaseKeywordMetric(BaseMetric):
 
         self.text_normalizer = BasicTextNormalizer()
 
+    @staticmethod
+    def _extract_fp_context(
+        ali: list[tuple[str, str]], positions: list[int], context_words: int = 3
+    ) -> tuple[str, str]:
+        """Extract text context around a false positive occurrence from the alignment.
+
+        Returns (gt_context, pred_context) strings with `context_words` real words
+        before and after the FP region, filtering out <eps> alignment tokens.
+        """
+        eps = "<eps>"
+        start_pos = positions[0]
+        end_pos = positions[-1]
+
+        gt_before: list[str] = []
+        pred_before: list[str] = []
+        for i in range(start_pos - 1, -1, -1):
+            if len(gt_before) >= context_words and len(pred_before) >= context_words:
+                break
+            if ali[i][0] != eps and len(gt_before) < context_words:
+                gt_before.insert(0, ali[i][0])
+            if ali[i][1] != eps and len(pred_before) < context_words:
+                pred_before.insert(0, ali[i][1])
+
+        gt_fp = [ali[p][0] for p in positions if ali[p][0] != eps]
+        pred_fp = [ali[p][1] for p in positions if ali[p][1] != eps]
+
+        gt_after: list[str] = []
+        pred_after: list[str] = []
+        for i in range(end_pos + 1, len(ali)):
+            if len(gt_after) >= context_words and len(pred_after) >= context_words:
+                break
+            if ali[i][0] != eps and len(gt_after) < context_words:
+                gt_after.append(ali[i][0])
+            if ali[i][1] != eps and len(pred_after) < context_words:
+                pred_after.append(ali[i][1])
+
+        return " ".join(gt_before + gt_fp + gt_after), " ".join(pred_before + pred_fp + pred_after)
+
     def compute_keyword_stats(
         self, reference: Transcript, hypothesis: Transcript, dictionary: list[str]
     ) -> dict[str, Any]:
         """Compute keyword statistics between reference and hypothesis."""
 
-        # Convert transcripts to text
-        ref_text = reference.get_transcript_string()
-        hyp_text = hypothesis.get_transcript_string()
+        if not dictionary:
+            return {"true_positives": 0, "ground_truth": 0, "false_positives": 0, "keyword_stats": {}}
 
-        logger.debug(f"Reference text: '{ref_text}'")
-        logger.debug(f"Hypothesis text: '{hyp_text}'")
+        # Convert transcripts to text
+        ref_text_original = reference.get_transcript_string()
+        hyp_text_original = hypothesis.get_transcript_string()
+
+        logger.debug(f"Reference text: '{ref_text_original}'")
+        logger.debug(f"Hypothesis text: '{hyp_text_original}'")
         logger.debug(f"Keywords: {dictionary}")
 
         # Apply normalization to BOTH reference and hypothesis
-        ref_text = self.text_normalizer(ref_text)
-        hyp_text = self.text_normalizer(hyp_text)
+        ref_text = self.text_normalizer(ref_text_original)
+        hyp_text = self.text_normalizer(hyp_text_original)
 
         # Normalize keywords as well
         normalized_keywords = [self.text_normalizer(kw) for kw in dictionary]
@@ -66,6 +107,7 @@ class BaseKeywordMetric(BaseMetric):
             key_words_stat[word] = [0, 0, 0]  # [tp, gt, fp]
 
         eps = "<eps>"
+        fp_occurrences = []  # tracks alignment positions of each FP for context extraction
 
         # 1-grams
         for idx in range(len(ali)):
@@ -77,6 +119,7 @@ class BaseKeywordMetric(BaseMetric):
                     key_words_stat[word_ref][0] += 1  # add to tp
             elif word_hyp in key_words_stat:
                 key_words_stat[word_hyp][2] += 1  # add to fp
+                fp_occurrences.append({"keyword": word_hyp, "ali_positions": [idx]})
 
         # 2-grams and higher
         for ngram_order in range(2, max_ngram_order + 1):
@@ -121,6 +164,10 @@ class BaseKeywordMetric(BaseMetric):
                     phrase_ref = " ".join([ali[item[1]][0] for item in item_hyp])
                     if phrase_hyp in key_words_stat and phrase_hyp != phrase_ref:
                         key_words_stat[phrase_hyp][2] += 1  # add to fp
+                        fp_occurrences.append({
+                            "keyword": phrase_hyp,
+                            "ali_positions": [item[1] for item in item_hyp],
+                        })
 
         # Compute totals
         tp = sum([key_words_stat[x][0] for x in key_words_stat])
@@ -154,6 +201,30 @@ class BaseKeywordMetric(BaseMetric):
 
         logger.debug("---")
         logger.debug(f"Keyword statistics computed: TP={tp}, FP={fp}, FN={gt - tp}, GT={gt}")
+
+        # Build false_positives dict with text context around each FP occurrence
+        norm_to_orig = {}
+        for i, nk in enumerate(normalized_keywords):
+            norm_to_orig.setdefault(nk, dictionary[i])
+
+        false_positives_report: dict[str, list[dict[str, str]]] = {}
+        for occ in fp_occurrences:
+            orig_kw = norm_to_orig.get(occ["keyword"], occ["keyword"])
+            gt_ctx, pred_ctx = self._extract_fp_context(ali, occ["ali_positions"])
+            false_positives_report.setdefault(orig_kw, []).append({
+                "gt": gt_ctx,
+                "pred": pred_ctx,
+            })
+
+        self._last_report_data = {
+            "hypothesis_transcript": hyp_text_original,
+            "reference_transcript": ref_text_original,
+            "keywords": list(dictionary),
+            "false_positives": false_positives_report,
+            "true_positives": tp,
+            "ground_truth": gt,
+            "false_positives_count": fp,
+        }
 
         return {"true_positives": tp, "ground_truth": gt, "false_positives": fp, "keyword_stats": key_words_stat}
 

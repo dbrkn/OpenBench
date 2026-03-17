@@ -1,7 +1,9 @@
 # For licensing see accompanying LICENSE.md file.
 # Copyright (C) 2025 Argmax, Inc. All Rights Reserved.
 
+import json
 from multiprocessing import Pool
+from pathlib import Path
 from typing import NamedTuple
 
 import tqdm
@@ -12,6 +14,7 @@ from pyannote.metrics.base import BaseMetric
 
 from ..dataset import BaseDataset, BaseSample, DatasetRegistry
 from ..metric import MetricRegistry
+from ..metric.keyword_boosting_metrics.boosting_metrics import BaseKeywordMetric
 from ..pipeline import Pipeline
 from ..types import PipelineType
 from .config import BenchmarkConfig
@@ -158,6 +161,39 @@ class BenchmarkRunner:
                 f"{metric_name} - Sample: {formatted_result}\n{metric_name} - Global: {formatted_metric}\n"
             )
             metrics_logging_string += formatted_string
+
+        # Save per-sample keyword report if any keyword metrics were used
+        keyword_report_data = None
+        for metric_name, metric in metrics_dict.items():
+            if isinstance(metric, BaseKeywordMetric) and hasattr(metric, "_last_report_data"):
+                if keyword_report_data is None:
+                    report = metric._last_report_data
+                    tp = report["true_positives"]
+                    gt_count = report["ground_truth"]
+                    fp_count = report["false_positives_count"]
+                    keyword_report_data = {
+                        "sample_id": sample_id,
+                        "audio_name": sample.audio_name,
+                        "transcript": report["hypothesis_transcript"],
+                        "gt_transcript": report["reference_transcript"],
+                        "precision": tp / (tp + fp_count + 1e-8),
+                        "recall": tp / (gt_count + 1e-8),
+                        "keywords": report["keywords"],
+                        "false_positives": report["false_positives"],
+                    }
+
+                # Also store the individual metric result
+                for tr in task_results:
+                    if tr.metric_name == metric_name:
+                        keyword_report_data[metric_name.value] = tr.result
+                        break
+
+        if keyword_report_data:
+            report_dir = Path("keyword_reports")
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / f"sample_{sample_id}.json"
+            with report_path.open("w") as f:
+                json.dump(keyword_report_data, f, indent=2)
 
         # Create logging string
         logging_string = (
