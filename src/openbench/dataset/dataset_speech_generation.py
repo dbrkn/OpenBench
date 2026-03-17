@@ -13,6 +13,7 @@ class SpeechGenerationExtraInfo(TypedDict, total=False):
     """Extra info for speech generation samples."""
 
     language: str
+    dialogue: list[dict]
 
 
 class SpeechGenerationRow(TypedDict):
@@ -95,5 +96,7 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
         extra_info: SpeechGenerationExtraInfo = {}
         if "language" in row:
             extra_info["language"] = row["language"]
+        if "dialogue" in row and row["dialogue"]:
+            extra_info["dialogue"] = row["dialogue"]
 
         return reference, extra_info
