@@ -10,6 +10,10 @@ from .speech_generation_elevenlabs import (
     ElevenLabsSpeechGenerationConfig,
     ElevenLabsSpeechGenerationPipeline,
 )
+from .speech_generation_elevenlabs_dialogue import (
+    ElevenLabsDialogueGenerationConfig,
+    ElevenLabsDialogueGenerationPipeline,
+)
 from .speech_generation_gemini import (
     GeminiSpeechGenerationConfig,
     GeminiSpeechGenerationPipeline,
@@ -24,6 +28,8 @@ from .speech_generation_wkp import WhisperKitSpeechGenerationPipeline
 __all__ = [
     "CartesiaSpeechGenerationConfig",
     "CartesiaSpeechGenerationPipeline",
+    "ElevenLabsDialogueGenerationConfig",
+    "ElevenLabsDialogueGenerationPipeline",
     "ElevenLabsSpeechGenerationConfig",
     "ElevenLabsSpeechGenerationPipeline",
     "GeminiSpeechGenerationConfig",

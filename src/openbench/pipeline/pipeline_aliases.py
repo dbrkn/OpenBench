@@ -27,6 +27,7 @@ from .orchestration import (
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
     CartesiaSpeechGenerationPipeline,
+    ElevenLabsDialogueGenerationPipeline,
     ElevenLabsSpeechGenerationPipeline,
     GeminiSpeechGenerationPipeline,
     OpenAISpeechGenerationPipeline,
@@ -693,6 +694,31 @@ def register_pipeline_aliases() -> None:
     )
 
     PipelineRegistry.register_alias(
+        "elevenlabs-dialogue-generation",
+        ElevenLabsDialogueGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model_id": "eleven_v3",
+            "speaker_voice_map": {
+                "doctor": "9BWtsMINqrJLrRacOk9x",
+                "patient": "IKne3meq5aSn9XLyUdCD",
+                "assistant": "pFZP5JQG7iQjIQuC4Bku",
+            },
+            "default_voice_id": "9BWtsMINqrJLrRacOk9x",
+            "max_chars_per_chunk": 4500,
+            "chunk_silence_duration": 0.75,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="ElevenLabs dialogue generation pipeline. Generates multi-speaker conversational audio "
+        "from dialogue turns using ElevenLabs text_to_dialogue API, then transcribes the generated "
+        "audio to compute WER against the original dialogue text. "
+        "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
+    )
+
+    PipelineRegistry.register_alias(
         "elevenlabs-speech-generation",
         ElevenLabsSpeechGenerationPipeline,
         default_config={
@@ -747,6 +773,7 @@ def register_pipeline_aliases() -> None:
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires `OPENAI_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
+
 
     ################# STREAMING TRANSCRIPTION PIPELINES #################
 

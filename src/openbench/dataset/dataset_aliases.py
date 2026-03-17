@@ -660,6 +660,7 @@ def register_dataset_aliases() -> None:
                 PipelineType.DIARIZATION,
                 PipelineType.STREAMING_TRANSCRIPTION,
                 PipelineType.ORCHESTRATION,
+                PipelineType.SPEECH_GENERATION,
             },
             description="Local dataset for testing. To use this dataset you need to set the `LOCAL_DATASET_PATH` and `LOCAL_DATASET_SPLIT` environment variables.",
         )
