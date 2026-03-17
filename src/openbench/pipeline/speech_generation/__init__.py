@@ -10,6 +10,10 @@ from .speech_generation_elevenlabs import (
     ElevenLabsSpeechGenerationConfig,
     ElevenLabsSpeechGenerationPipeline,
 )
+from .speech_generation_gemini import (
+    GeminiSpeechGenerationConfig,
+    GeminiSpeechGenerationPipeline,
+)
 from .speech_generation_openai import (
     OpenAISpeechGenerationConfig,
     OpenAISpeechGenerationPipeline,
@@ -22,6 +26,8 @@ __all__ = [
     "CartesiaSpeechGenerationPipeline",
     "ElevenLabsSpeechGenerationConfig",
     "ElevenLabsSpeechGenerationPipeline",
+    "GeminiSpeechGenerationConfig",
+    "GeminiSpeechGenerationPipeline",
     "OpenAISpeechGenerationConfig",
     "OpenAISpeechGenerationPipeline",
     "SpeechGenerationConfig",

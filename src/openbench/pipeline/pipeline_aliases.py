@@ -28,6 +28,7 @@ from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
     CartesiaSpeechGenerationPipeline,
     ElevenLabsSpeechGenerationPipeline,
+    GeminiSpeechGenerationPipeline,
     OpenAISpeechGenerationPipeline,
     WhisperKitSpeechGenerationPipeline,
 )
@@ -707,6 +708,25 @@ def register_pipeline_aliases() -> None:
         description="ElevenLabs speech generation pipeline. Generates audio from text prompts using ElevenLabs TTS API, "
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
+    )
+
+    PipelineRegistry.register_alias(
+        "gemini-speech-generation",
+        GeminiSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "voice_name": "Charon",
+            "language_code": "en-US",
+            "model_name": "gemini-2.5-pro-tts",
+            "audio_encoding": "MP3",
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="Google Gemini speech generation pipeline. Generates audio from text prompts using Google Cloud TTS, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires Google Cloud credentials and `WHISPERKITPRO_CLI_PATH` env var.",
     )
 
     PipelineRegistry.register_alias(
