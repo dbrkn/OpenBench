@@ -26,7 +26,9 @@ from .orchestration import (
 )
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
+    ElevenLabsSpeechGenerationPipeline,
     GeminiSpeechGenerationPipeline,
+    OpenAISpeechGenerationPipeline,
     WhisperKitSpeechGenerationPipeline,
 )
 from .streaming_transcription import (
@@ -670,6 +672,24 @@ def register_pipeline_aliases() -> None:
     )
 
     PipelineRegistry.register_alias(
+        "elevenlabs-speech-generation",
+        ElevenLabsSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+            "model_id": "eleven_multilingual_v2",
+            "output_format": "mp3_44100_128",
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="ElevenLabs speech generation pipeline. Generates audio from text prompts using ElevenLabs TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
+    )
+
+    PipelineRegistry.register_alias(
         "gemini-speech-generation",
         GeminiSpeechGenerationPipeline,
         default_config={
@@ -686,6 +706,25 @@ def register_pipeline_aliases() -> None:
         description="Google Gemini speech generation pipeline. Generates audio from text prompts using Google Cloud TTS, "
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires Google Cloud credentials and `WHISPERKITPRO_CLI_PATH` env var.",
+    )
+
+    PipelineRegistry.register_alias(
+        "openai-speech-generation",
+        OpenAISpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model": "gpt-4o-mini-tts",
+            "voice": "coral",
+            "response_format": "wav",
+            "speed": 1.0,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="OpenAI speech generation pipeline. Generates audio from text prompts using OpenAI TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `OPENAI_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
 
     ################# STREAMING TRANSCRIPTION PIPELINES #################
