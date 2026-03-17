@@ -6,12 +6,18 @@ from .speech_generation_elevenlabs import (
     ElevenLabsSpeechGenerationConfig,
     ElevenLabsSpeechGenerationPipeline,
 )
+from .speech_generation_openai import (
+    OpenAISpeechGenerationConfig,
+    OpenAISpeechGenerationPipeline,
+)
 from .speech_generation_wkp import WhisperKitSpeechGenerationPipeline
 
 
 __all__ = [
     "ElevenLabsSpeechGenerationConfig",
     "ElevenLabsSpeechGenerationPipeline",
+    "OpenAISpeechGenerationConfig",
+    "OpenAISpeechGenerationPipeline",
     "SpeechGenerationConfig",
     "SpeechGenerationOutput",
     "WhisperKitSpeechGenerationPipeline",
