@@ -26,6 +26,7 @@ from .orchestration import (
 )
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
+    CartesiaSpeechGenerationPipeline,
     ElevenLabsSpeechGenerationPipeline,
     OpenAISpeechGenerationPipeline,
     WhisperKitSpeechGenerationPipeline,
@@ -668,6 +669,26 @@ def register_pipeline_aliases() -> None:
         description="WhisperKit speech generation pipeline. Generates audio from text prompts using whisperkit-cli TTS, "
         "then transcribes the generated audio to compute WER against the original prompt. "
         "Requires `WHISPERKIT_CLI_PATH` env var pointing to the whisperkit-cli binary.",
+    )
+
+    PipelineRegistry.register_alias(
+        "cartesia-speech-generation",
+        CartesiaSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+            "model_id": "sonic-3",
+            "voice_id": "e07c00bc-4134-4eae-9ea4-1a55fb45746b",
+            "container": "wav",
+            "encoding": "pcm_f32le",
+            "sample_rate": 44100,
+            "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "transcription_repo_id": "argmaxinc/parakeetkit-pro",
+            "transcription_model_variant": "nvidia_parakeet-v2_476MB",
+            "keep_generated_audio": False,
+        },
+        description="Cartesia speech generation pipeline. Generates audio from text prompts using Cartesia TTS API, "
+        "then transcribes the generated audio to compute WER against the original prompt. "
+        "Requires `CARTESIA_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
 
     PipelineRegistry.register_alias(
