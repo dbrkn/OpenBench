@@ -326,16 +326,18 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
             f"Audio output directory (absolute): {output_dir}"
         )
 
-        stale = [
-            f for f in chunks_dir.iterdir()
-            if f.is_file() and f.stat().st_size == 0
-        ]
-        if stale:
-            logger.info(
-                f"Cleaning up {len(stale)} stale 0-byte "
-                "chunk files from previous interrupted run"
-            )
+        staging_dir = output_dir / ".staging"
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        for d in (chunks_dir, staging_dir):
+            stale = [
+                f for f in d.iterdir()
+                if f.is_file() and f.stat().st_size == 0
+            ]
             for f in stale:
+                f.unlink()
+        for f in staging_dir.iterdir():
+            if f.is_file():
                 f.unlink()
 
         def _generate_chunk(
@@ -344,15 +346,14 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
         ) -> Path:
             """Generate audio for a single chunk of dialogue turns.
 
-            Writes to a temp file first, then renames to the
-            final path so interrupted runs don't leave 0-byte
-            stale files.
+            Writes to a staging file first, then moves to the
+            final path so chunks/ only contains completed files.
             """
             audio_iter = client.text_to_dialogue.convert(
                 inputs=chunk_inputs,
             )
             fd, tmp = tempfile.mkstemp(
-                suffix=".mp3", dir=chunks_dir
+                suffix=".mp3", dir=staging_dir
             )
             try:
                 with os.fdopen(fd, "wb") as f:
