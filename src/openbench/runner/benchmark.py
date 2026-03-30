@@ -324,6 +324,20 @@ class BenchmarkRunner:
         metrics_dict = self._get_metrics(pipeline)
         dataset_length = len(dataset)
 
+        has_pre_gen = hasattr(pipeline, "pre_generate_all")
+        concurrency = getattr(
+            pipeline.config, "concurrency", 1
+        )
+        if has_pre_gen and concurrency > 1:
+            logger.info(
+                "Pre-generating TTS audio with "
+                f"concurrency={concurrency}"
+            )
+            all_samples = [
+                dataset[i] for i in range(dataset_length)
+            ]
+            pipeline.pre_generate_all(all_samples)
+
         for sample_id, sample in enumerate(dataset):
             processing_result = self._process_single_sample(
                 sample_and_id=(sample_id, sample),

@@ -756,21 +756,26 @@ def register_pipeline_aliases() -> None:
             "out_dir": "./speech_generation_results",
             "model_id": "eleven_v3",
             "speaker_voice_map": {
-                "doctor": "9BWtsMINqrJLrRacOk9x",
+                "doctor": "JBFqnCBsd6RMkjVDRZzb",
                 "patient": "IKne3meq5aSn9XLyUdCD",
                 "assistant": "pFZP5JQG7iQjIQuC4Bku",
             },
-            "default_voice_id": "9BWtsMINqrJLrRacOk9x",
+            "default_voice_id": "JBFqnCBsd6RMkjVDRZzb",
             "max_chars_per_chunk": 4500,
             "chunk_silence_duration": 0.75,
             "transcription_cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
             "transcription_repo_id": "argmaxinc/parakeetkit-pro",
             "transcription_model_variant": "nvidia_parakeet-v2_476MB",
             "keep_generated_audio": False,
+            "concurrency": 1,
+            "warm_start": False,
+            "audio_output_dir": None,
+            "generate_only": False,
         },
         description="ElevenLabs dialogue generation pipeline. Generates multi-speaker conversational audio "
         "from dialogue turns using ElevenLabs text_to_dialogue API, then transcribes the generated "
         "audio to compute WER against the original dialogue text. "
+        "Supports concurrency for parallel TTS generation and warm_start to reuse existing audio. "
         "Requires `ELEVENLABS_API_KEY` and `WHISPERKITPRO_CLI_PATH` env vars.",
     )
 

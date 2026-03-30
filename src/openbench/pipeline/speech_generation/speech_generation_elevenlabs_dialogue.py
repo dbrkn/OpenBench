@@ -16,12 +16,16 @@ configurable silence gaps between chunks.
 
 import io
 import os
+import shutil
+import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
 import soundfile as sf
+import tqdm
 from argmaxtools.utils import get_logger
 from pydantic import BaseModel, Field
 
@@ -47,7 +51,7 @@ logger = get_logger(__name__)
 TEMP_TTS_AUDIO_DIR = Path("./temp_tts_audio")
 
 DEFAULT_SPEAKER_VOICE_MAP = {
-    "doctor": "9BWtsMINqrJLrRacOk9x",
+    "doctor": "JBFqnCBsd6RMkjVDRZzb",
     "patient": "IKne3meq5aSn9XLyUdCD",
     "assistant": "pFZP5JQG7iQjIQuC4Bku",
 }
@@ -137,7 +141,7 @@ class ElevenLabsDialogueGenerationConfig(PipelineConfig):
         ),
     )
     default_voice_id: str = Field(
-        default="9BWtsMINqrJLrRacOk9x",
+        default="JBFqnCBsd6RMkjVDRZzb",
         description="Fallback voice ID for unmapped speakers.",
     )
     max_chars_per_chunk: int = Field(
@@ -156,11 +160,12 @@ class ElevenLabsDialogueGenerationConfig(PipelineConfig):
     )
 
     # Transcription parameters (WhisperKitPro / Parakeet)
-    transcription_cli_path: str = Field(
-        ...,
+    transcription_cli_path: str | None = Field(
+        default=None,
         description=(
             "Path to the whisperkit-cli binary "
-            "used for transcription."
+            "used for transcription. Required unless "
+            "generate_only=True."
         ),
     )
     transcription_repo_id: str | None = Field(
@@ -198,6 +203,36 @@ class ElevenLabsDialogueGenerationConfig(PipelineConfig):
         description=(
             "If True, keep the generated TTS audio "
             "files instead of deleting them."
+        ),
+    )
+
+    concurrency: int = Field(
+        default=1,
+        description=(
+            "Number of concurrent TTS API calls. "
+            "Values > 1 use a thread pool for I/O-bound generation."
+        ),
+    )
+    warm_start: bool = Field(
+        default=False,
+        description=(
+            "If True, skip TTS generation for samples that already "
+            "have audio files in the output directory and go straight "
+            "to transcription."
+        ),
+    )
+    audio_output_dir: str | None = Field(
+        default=None,
+        description=(
+            "Persistent directory for saving generated audio files "
+            "with sample_id names. If None, uses ./temp_tts_audio."
+        ),
+    )
+    generate_only: bool = Field(
+        default=False,
+        description=(
+            "If True, only generate TTS audio without "
+            "transcription. Requires audio_output_dir."
         ),
     )
 
@@ -244,7 +279,17 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
         config = self.config
         pipeline_ref = self
 
-        transcription_engine = self._build_transcription_engine()
+        if not config.generate_only:
+            if not config.transcription_cli_path:
+                raise ValueError(
+                    "transcription_cli_path is required "
+                    "unless generate_only=True."
+                )
+            transcription_engine = (
+                self._build_transcription_engine()
+            )
+        else:
+            transcription_engine = None
 
         api_key = config.api_key or os.getenv("ELEVENLABS_API_KEY")
         if not api_key:
@@ -257,33 +302,87 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
 
         client = ElevenLabs(api_key=api_key)
 
+        needs_persistent_dir = (
+            config.warm_start
+            or config.concurrency > 1
+            or config.generate_only
+        )
+        if config.audio_output_dir:
+            output_dir = Path(config.audio_output_dir).resolve()
+        elif needs_persistent_dir:
+            raise ValueError(
+                "warm_start, concurrency > 1, or generate_only "
+                "requires audio_output_dir to be set to an "
+                "absolute path. The default relative path "
+                "changes with each run's timestamped output "
+                "directory."
+            )
+        else:
+            output_dir = TEMP_TTS_AUDIO_DIR
+        output_dir.mkdir(parents=True, exist_ok=True)
+        chunks_dir = output_dir / "chunks"
+        chunks_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            f"Audio output directory (absolute): {output_dir}"
+        )
+
+        stale = [
+            f for f in chunks_dir.iterdir()
+            if f.is_file() and f.stat().st_size == 0
+        ]
+        if stale:
+            logger.info(
+                f"Cleaning up {len(stale)} stale 0-byte "
+                "chunk files from previous interrupted run"
+            )
+            for f in stale:
+                f.unlink()
+
         def _generate_chunk(
             chunk_inputs: list[dict],
             chunk_path: Path,
         ) -> Path:
-            """Generate audio for a single chunk of dialogue turns."""
+            """Generate audio for a single chunk of dialogue turns.
+
+            Writes to a temp file first, then renames to the
+            final path so interrupted runs don't leave 0-byte
+            stale files.
+            """
             audio_iter = client.text_to_dialogue.convert(
                 inputs=chunk_inputs,
             )
-            with open(chunk_path, "wb") as f:
-                for data in audio_iter:
-                    f.write(data)
-
-            if not chunk_path.exists() or chunk_path.stat().st_size == 0:
-                raise RuntimeError(
-                    "ElevenLabs dialogue TTS failed: "
-                    f"chunk empty at {chunk_path}"
-                )
+            fd, tmp = tempfile.mkstemp(
+                suffix=".mp3", dir=chunks_dir
+            )
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    for data in audio_iter:
+                        f.write(data)
+                tmp_path = Path(tmp)
+                if tmp_path.stat().st_size == 0:
+                    tmp_path.unlink(missing_ok=True)
+                    raise RuntimeError(
+                        "ElevenLabs dialogue TTS returned "
+                        f"empty audio for {chunk_path.name}"
+                    )
+                tmp_path.rename(chunk_path)
+            except Exception:
+                Path(tmp).unlink(missing_ok=True)
+                raise
             return chunk_path
 
-        def generate_and_transcribe(
-            input: ElevenLabsDialogueGenerationInput,
-        ) -> Transcript:
-            TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-            chunks_dir = TEMP_TTS_AUDIO_DIR / "chunks"
-            chunks_dir.mkdir(parents=True, exist_ok=True)
+        def _find_existing_audio(audio_name: str) -> Path | None:
+            """Check if audio already exists for warm start."""
+            for ext in (".wav", ".mp3"):
+                candidate = output_dir / f"{audio_name}{ext}"
+                if candidate.exists() and candidate.stat().st_size > 0:
+                    return candidate
+            return None
 
-            # -- Step 1: Chunk dialogue turns --
+        def _generate_audio(
+            input: ElevenLabsDialogueGenerationInput,
+        ) -> Path:
+            """Generate TTS audio for a single sample. Returns audio path."""
             chunks = _chunk_dialogue_turns(
                 input.dialogue,
                 config.speaker_voice_map,
@@ -297,10 +396,11 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
                 f"{total_turns} turns in {len(chunks)} chunk(s)"
             )
 
-            # -- Step 2: Generate audio per chunk --
             chunk_paths: list[Path] = []
             for i, chunk_inputs in enumerate(chunks):
-                chunk_chars = sum(len(e["text"]) for e in chunk_inputs)
+                chunk_chars = sum(
+                    len(e["text"]) for e in chunk_inputs
+                )
                 chunk_path = (
                     chunks_dir
                     / f"{input.audio_name}_chunk_{i}.mp3"
@@ -312,15 +412,14 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
                 _generate_chunk(chunk_inputs, chunk_path)
                 chunk_paths.append(chunk_path)
 
-            # -- Step 3: Stitch or use single chunk --
             if len(chunk_paths) == 1:
                 audio_path = (
-                    TEMP_TTS_AUDIO_DIR / f"{input.audio_name}.mp3"
+                    output_dir / f"{input.audio_name}.mp3"
                 )
-                chunk_paths[0].rename(audio_path)
+                shutil.copy2(chunk_paths[0], audio_path)
             else:
                 audio_path = (
-                    TEMP_TTS_AUDIO_DIR / f"{input.audio_name}.wav"
+                    output_dir / f"{input.audio_name}.wav"
                 )
                 _stitch_audio_files(
                     chunk_paths,
@@ -332,22 +431,16 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
                     f"{audio_path.name}"
                 )
 
-            # -- Step 4: Read audio duration --
-            try:
-                info = sf.info(str(audio_path))
-                pipeline_ref._last_generated_duration = info.duration
-            except Exception as e:
-                logger.warning(f"Audio duration read failed: {e}")
-                pipeline_ref._last_generated_duration = None
+            return audio_path
 
-            # -- Step 5: Transcribe via WhisperKitPro (Parakeet) --
+        def _transcribe_audio(audio_path: Path) -> Transcript:
+            """Transcribe an audio file and return Transcript."""
             engine_input = WhisperKitProInput(
                 audio_path=audio_path,
                 keep_audio=config.keep_generated_audio,
             )
             engine_output = transcription_engine(engine_input)
 
-            # -- Step 6: Parse transcription report --
             json_path = engine_output.json_report_path
             if json_path.exists():
                 import json
@@ -375,10 +468,154 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
 
             text_preview = transcript.get_transcript_string()[:100]
             logger.info(f"Transcription: {text_preview}...")
-
             return transcript
 
+        def generate_and_transcribe(
+            input: ElevenLabsDialogueGenerationInput,
+        ) -> Transcript:
+            # Skip generation when warm_start is enabled or when
+            # pre_generate_all already created the audio file
+            # (concurrency > 1 triggers pre_generate_all in the runner)
+            should_check = (
+                config.warm_start
+                or config.concurrency > 1
+                or config.generate_only
+            )
+            existing = (
+                _find_existing_audio(input.audio_name)
+                if should_check
+                else None
+            )
+
+            if existing:
+                logger.info(
+                    f"Reusing existing audio {existing} "
+                    f"for {input.audio_name}"
+                )
+                audio_path = existing
+            else:
+                audio_path = _generate_audio(input)
+
+            try:
+                info = sf.info(str(audio_path))
+                pipeline_ref._last_generated_duration = info.duration
+            except Exception as e:
+                logger.warning(
+                    f"Audio duration read failed: {e}"
+                )
+                pipeline_ref._last_generated_duration = None
+
+            if config.generate_only:
+                logger.info(
+                    f"generate_only: skipping transcription "
+                    f"for {input.audio_name}"
+                )
+                return Transcript.from_words_info(
+                    words=input.text.split()
+                )
+
+            return _transcribe_audio(audio_path)
+
+        # Store references for pre_generate_all
+        self._generate_audio = _generate_audio
+        self._find_existing_audio = _find_existing_audio
+        self._output_dir = output_dir
+
         return generate_and_transcribe
+
+    def pre_generate_all(
+        self, samples: list[SpeechGenerationSample]
+    ) -> None:
+        """Pre-generate all TTS audio concurrently.
+
+        Logs warm-start stats and shows a progress bar.
+        """
+        config = self.config
+        if config.concurrency <= 1:
+            return
+
+        total = len(samples)
+        skipped = 0
+        no_dialogue = 0
+        inputs = []
+
+        for sample in samples:
+            dialogue = sample.extra_info.get("dialogue", [])
+            if not dialogue:
+                no_dialogue += 1
+                continue
+
+            should_check = (
+                config.warm_start or config.generate_only
+            )
+            if should_check:
+                existing = self._find_existing_audio(
+                    sample.audio_name
+                )
+                if existing:
+                    skipped += 1
+                    continue
+
+            text = sample.reference.get_transcript_string()
+            inputs.append(
+                ElevenLabsDialogueGenerationInput(
+                    text=text,
+                    dialogue=dialogue,
+                    audio_name=sample.audio_name,
+                )
+            )
+
+        to_generate = len(inputs)
+        logger.info(
+            f"Audio generation plan: {total} total, "
+            f"{skipped} already exist, "
+            f"{no_dialogue} have no dialogue, "
+            f"{to_generate} to generate "
+            f"(concurrency={config.concurrency})"
+        )
+
+        if not inputs:
+            logger.info("Nothing to generate.")
+            return
+
+        completed = 0
+        failed = 0
+        pbar = tqdm.tqdm(
+            total=to_generate,
+            desc="Generating TTS audio",
+            unit="sample",
+        )
+
+        with ThreadPoolExecutor(
+            max_workers=config.concurrency
+        ) as executor:
+            futures = {
+                executor.submit(self._generate_audio, inp): inp
+                for inp in inputs
+            }
+            for future in as_completed(futures):
+                inp = futures[future]
+                try:
+                    path = future.result()
+                    completed += 1
+                    pbar.set_postfix_str(
+                        f"last={inp.audio_name}"
+                    )
+                except Exception as e:
+                    failed += 1
+                    logger.error(
+                        f"Failed: {inp.audio_name}: {e}"
+                    )
+                    pbar.close()
+                    raise
+                finally:
+                    pbar.update(1)
+
+        pbar.close()
+        logger.info(
+            f"Generation complete: {completed} succeeded, "
+            f"{failed} failed, {skipped} reused"
+        )
 
     def _build_transcription_engine(self) -> WhisperKitPro:
         """Create WhisperKitPro engine for transcription (Parakeet)."""
@@ -403,7 +640,11 @@ class ElevenLabsDialogueGenerationPipeline(Pipeline):
         )
 
     def __call__(self, input_sample: BaseSample) -> PipelineOutput:
-        """Run pipeline and set generated audio duration."""
+        """Run pipeline and set generated audio duration.
+
+        When warm_start is enabled, audio generation is skipped for
+        samples that already have audio files in audio_output_dir.
+        """
         self._last_generated_duration: float | None = None
         parsed_input = self.parse_input(input_sample)
         start_time = time.perf_counter()
