@@ -180,6 +180,7 @@ class BenchmarkRunner:
                         "recall": tp / (gt_count + 1e-8),
                         "keywords": report["keywords"],
                         "false_positives": report["false_positives"],
+                        "false_negatives": report["false_negatives"],
                     }
 
                 # Also store the individual metric result

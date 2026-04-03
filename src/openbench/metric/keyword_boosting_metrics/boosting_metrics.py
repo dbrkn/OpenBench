@@ -65,6 +65,16 @@ class BaseKeywordMetric(BaseMetric):
         """Compute keyword statistics between reference and hypothesis."""
 
         if not dictionary:
+            self._last_report_data = {
+                "hypothesis_transcript": hypothesis.get_transcript_string(),
+                "reference_transcript": reference.get_transcript_string(),
+                "keywords": [],
+                "false_positives": {},
+                "false_negatives": {},
+                "true_positives": 0,
+                "ground_truth": 0,
+                "false_positives_count": 0,
+            }
             return {"true_positives": 0, "ground_truth": 0, "false_positives": 0, "keyword_stats": {}}
 
         # Convert transcripts to text
@@ -107,7 +117,8 @@ class BaseKeywordMetric(BaseMetric):
             key_words_stat[word] = [0, 0, 0]  # [tp, gt, fp]
 
         eps = "<eps>"
-        fp_occurrences = []  # tracks alignment positions of each FP for context extraction
+        fp_occurrences = []  # hyp matched keyword but ref did not (same positions)
+        fn_occurrences = []  # ref matched keyword but hyp did not
 
         # 1-grams
         for idx in range(len(ali)):
@@ -117,6 +128,8 @@ class BaseKeywordMetric(BaseMetric):
                 key_words_stat[word_ref][1] += 1  # add to gt
                 if word_ref == word_hyp:
                     key_words_stat[word_ref][0] += 1  # add to tp
+                else:
+                    fn_occurrences.append({"keyword": word_ref, "ali_positions": [idx]})
             elif word_hyp in key_words_stat:
                 key_words_stat[word_hyp][2] += 1  # add to fp
                 fp_occurrences.append({"keyword": word_hyp, "ali_positions": [idx]})
@@ -144,6 +157,11 @@ class BaseKeywordMetric(BaseMetric):
                         key_words_stat[phrase_ref][1] += 1  # add to gt
                         if phrase_ref == phrase_hyp:
                             key_words_stat[phrase_ref][0] += 1  # add to tp
+                        else:
+                            fn_occurrences.append({
+                                "keyword": phrase_ref,
+                                "ali_positions": [item[1] for item in item_ref],
+                            })
 
             # For false positive hypothesis phrase
             idx = 0
@@ -216,11 +234,21 @@ class BaseKeywordMetric(BaseMetric):
                 "pred": pred_ctx,
             })
 
+        false_negatives_report: dict[str, list[dict[str, str]]] = {}
+        for occ in fn_occurrences:
+            orig_kw = norm_to_orig.get(occ["keyword"], occ["keyword"])
+            gt_ctx, pred_ctx = self._extract_fp_context(ali, occ["ali_positions"])
+            false_negatives_report.setdefault(orig_kw, []).append({
+                "gt": gt_ctx,
+                "pred": pred_ctx,
+            })
+
         self._last_report_data = {
             "hypothesis_transcript": hyp_text_original,
             "reference_transcript": ref_text_original,
             "keywords": list(dictionary),
             "false_positives": false_positives_report,
+            "false_negatives": false_negatives_report,
             "true_positives": tp,
             "ground_truth": gt,
             "false_positives_count": fp,
