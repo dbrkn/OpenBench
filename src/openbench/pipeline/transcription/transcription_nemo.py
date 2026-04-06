@@ -228,7 +228,8 @@ class NeMoTranscriptionPipeline(Pipeline):
         # Extract keywords from sample's extra_info if flag is enabled
         self.context_graph = None
         if self.config.use_keywords:
-            keywords = input_sample.extra_info.get("dictionary", [])
+            ei = input_sample.extra_info
+            keywords = ei.get("keywords") or ei.get("dictionary", [])
             if keywords:
                 context_transcripts = []
                 for keyword in keywords:

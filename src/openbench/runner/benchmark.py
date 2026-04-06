@@ -130,7 +130,8 @@ class BenchmarkRunner:
 
         for metric_name, metric in metrics_dict.items():
             reference = sample.reference
-            kwargs = sample.extra_info
+            # Omit `keywords` (ASR custom vocab only). Keyword metrics use `dictionary`.
+            kwargs = {k: v for k, v in sample.extra_info.items() if k != "keywords"}
 
             # The metric returns a dictionary that is also stored in the metric object as a state to compute the global result
             # We copy to avoid any side effects that may happen while interacting with dictionary for reporting

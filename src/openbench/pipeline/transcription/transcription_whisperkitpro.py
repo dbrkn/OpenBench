@@ -114,7 +114,8 @@ class WhisperKitProTranscriptionPipeline(Pipeline):
         # Extract keywords from sample's extra_info if flag is enabled
         custom_vocab_path = None
         if self.config.use_keywords:
-            keywords = input_sample.extra_info.get("dictionary", [])
+            ei = input_sample.extra_info
+            keywords = ei.get("keywords") or ei.get("dictionary", [])
             if keywords:
                 # Create temp vocab directory if it doesn't exist
                 TEMP_VOCAB_DIR.mkdir(parents=True, exist_ok=True)

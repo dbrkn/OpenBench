@@ -46,7 +46,8 @@ class OpenAITranscriptionPipeline(Pipeline):
         # Extract keywords from sample's extra_info if flag is enabled
         self.current_keywords_prompt = None
         if self.config.use_keywords:
-            keywords = input_sample.extra_info.get("dictionary", [])
+            ei = input_sample.extra_info
+            keywords = ei.get("keywords") or ei.get("dictionary", [])
             if keywords:
                 # Format keywords as comma-separated prompt for OpenAI
                 self.current_keywords_prompt = ", ".join(keywords)

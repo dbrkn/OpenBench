@@ -9,10 +9,16 @@ from .dataset_base import BaseDataset, BaseSample
 
 
 class TranscriptionExtraInfo(TypedDict, total=False):
-    """Extra info for transcription samples."""
+    """Extra info for transcription samples.
+
+    ``dictionary``: terms for keyword metrics (precision / recall / F-score).
+    ``keywords``: optional list for ASR custom vocabulary / boosting; if absent or
+    empty, pipelines fall back to ``dictionary`` for boosting.
+    """
 
     language: str
     dictionary: list[str]
+    keywords: list[str]
 
 
 class TranscriptionRow(TypedDict):
@@ -24,6 +30,7 @@ class TranscriptionRow(TypedDict):
     word_timestamps_end: NotRequired[list[float]]
     language: NotRequired[str]
     dictionary: NotRequired[list[str]]
+    keywords: NotRequired[list[str]]
 
 
 class TranscriptionSample(BaseSample[Transcript, TranscriptionExtraInfo]):
@@ -60,4 +67,6 @@ class TranscriptionDataset(BaseDataset[TranscriptionSample]):
             extra_info["language"] = row["language"]
         if "dictionary" in row:
             extra_info["dictionary"] = row["dictionary"]
+        if "keywords" in row:
+            extra_info["keywords"] = row["keywords"]
         return reference, extra_info

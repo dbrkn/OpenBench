@@ -49,7 +49,8 @@ class ElevenLabsTranscriptionPipeline(Pipeline):
         """Override to extract keywords from sample before processing."""
         self.current_keywords = None
         if self.config.use_keywords:
-            keywords = input_sample.extra_info.get("dictionary", [])
+            ei = input_sample.extra_info
+            keywords = ei.get("keywords") or ei.get("dictionary", [])
             if keywords:
                 self.current_keywords = keywords
 

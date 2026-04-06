@@ -50,7 +50,8 @@ class DeepgramTranscriptionPipeline(Pipeline):
         """Override to extract keywords and language from sample before processing."""
         self.current_keywords = None
         if self.config.use_keywords:
-            keywords = input_sample.extra_info.get("dictionary", [])
+            ei = input_sample.extra_info
+            keywords = ei.get("keywords") or ei.get("dictionary", [])
             if keywords:
                 # Add + between keywords for Deepgram URL
                 self.current_keywords = "+".join(keywords)
