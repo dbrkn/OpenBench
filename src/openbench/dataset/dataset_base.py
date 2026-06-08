@@ -43,6 +43,10 @@ class DatasetConfig(BaseModel):
             "The function signature should be `def transform(row: dict[str, Any]) -> dict[str, Any]` where the key is the post column mapping name and the value is the transformed column."
         ),
     )
+    row_filter: Callable[[dict[str, Any]], bool] | None = Field(
+        None,
+        description="Filter function applied before column mapping. Only rows where the function returns True are kept.",
+    )
 
     def load(self) -> HfDataset:
         """Load dataset from config.
@@ -63,6 +67,9 @@ class DatasetConfig(BaseModel):
         split = self.split or "test"  # Default split
         ds = load_local_dataset(dataset_dir=Path(self.dataset_id), split=split)
 
+        if self.row_filter is not None:
+            ds = ds.filter(self.row_filter)
+
         if self.num_samples is not None:
             ds = ds.take(self.num_samples)
 
@@ -78,7 +85,11 @@ class DatasetConfig(BaseModel):
     def _load_huggingface(self) -> HfDataset:
         """Load dataset from HuggingFace Hub."""
         # TODO: Add support for streaming datasets
-        ds = load_dataset(self.dataset_id, self.subset, split=self.split)
+        ds = load_dataset(self.dataset_id, self.subset, split=self.split, verification_mode="no_checks")
+
+        if self.row_filter is not None:
+            ds = ds.filter(self.row_filter)
+
         if self.num_samples is not None:
             ds = ds.take(self.num_samples)
 

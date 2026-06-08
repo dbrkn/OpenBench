@@ -11,6 +11,7 @@ from typing import Any
 
 import hydra
 import typer
+from datasets import load_dataset
 from pydantic import BaseModel, Field, model_validator
 from rich.console import Console
 from rich.table import Table
@@ -176,6 +177,9 @@ def run_alias_mode(
     wandb_tags: list[str] | None,
     use_keywords: bool | None,
     force_language: bool,
+    split: str | None,
+    language: str | None,
+    match_split: str | None,
     verbose: bool,
 ) -> BenchmarkResult:
     """Run evaluation using pipeline and dataset aliases."""
@@ -213,6 +217,36 @@ def run_alias_mode(
         ######### Build Benchmark Config #########
         typer.echo(f"📊 Loading dataset: {dataset_name}")
         dataset_config = DatasetRegistry.get_alias_config(dataset_name)
+
+        if split is not None:
+            dataset_config = dataset_config.model_copy(update={"split": split})
+            typer.echo(f"📂 Using split: {split}")
+
+        if match_split is not None:
+            typer.echo(f"🔗 Loading sample_names from split '{match_split}' for matching...")
+            other_ds = load_dataset(
+                dataset_config.dataset_id, dataset_config.subset, split=match_split, verification_mode="no_checks"
+            )
+            matching_names = set(other_ds["sample_name"])
+            typer.echo(f"🔗 Found {len(matching_names)} sample_names in '{match_split}'")
+
+        existing_filter = None
+        if language is not None:
+            lang = language
+            existing_filter = lambda row, _lang=lang: row["language"] == _lang
+            typer.echo(f"🌐 Filtering dataset to language: {language}")
+
+        if match_split is not None:
+            if existing_filter is not None:
+                combined_filter = lambda row, _f=existing_filter, _names=matching_names: (
+                    _f(row) and row.get("sample_name") in _names
+                )
+            else:
+                combined_filter = lambda row, _names=matching_names: row.get("sample_name") in _names
+            dataset_config = dataset_config.model_copy(update={"row_filter": combined_filter})
+            typer.echo(f"🔗 Will keep only samples matching '{match_split}'")
+        elif existing_filter is not None:
+            dataset_config = dataset_config.model_copy(update={"row_filter": existing_filter})
 
         wandb_config = WandbConfig(
             project_name=wandb_project,
@@ -291,6 +325,58 @@ def display_result(result: BenchmarkResult) -> None:
     console.print(table)
 
 
+def upload_results_to_hf(
+    result: BenchmarkResult,
+    dataset_id: str,
+    pipeline_name: str,
+    language: str | None,
+    split: str = "train",
+    subset: str | None = None,
+) -> None:
+    """Upload per-sample metric results as new columns to the HuggingFace dataset.
+
+    Loads the full dataset, adds a column per metric with results for evaluated samples
+    (None for non-evaluated samples), and pushes back to HuggingFace.
+    """
+    typer.echo(f"📤 Uploading per-sample results to {dataset_id}...")
+
+    full_ds = load_dataset(dataset_id, subset, split=split, verification_mode="no_checks")
+
+    # Build filtered index mapping: position in filtered subset -> index in full dataset
+    if language is not None:
+        filtered_indices = [i for i in range(len(full_ds)) if full_ds[i]["language"] == language]
+    else:
+        filtered_indices = list(range(len(full_ds)))
+
+    # Sanitize pipeline name for column naming
+    col_prefix = pipeline_name.replace("-", "_")
+
+    # Group task results by metric
+    metric_results: dict[str, dict[int, float | None]] = {}
+    for task_result in result.task_results:
+        metric_name = task_result.metric_name
+        if metric_name not in metric_results:
+            metric_results[metric_name] = {}
+        metric_results[metric_name][task_result.sample_id] = task_result.result
+
+    for metric_name, sample_results in metric_results.items():
+        col_name = f"{metric_name}_{col_prefix}"
+        values = [None] * len(full_ds)
+        for sample_id, value in sample_results.items():
+            if sample_id < len(filtered_indices):
+                original_idx = filtered_indices[sample_id]
+                values[original_idx] = value
+
+        # Remove column if it already exists (re-run scenario)
+        if col_name in full_ds.column_names:
+            full_ds = full_ds.remove_columns(col_name)
+        full_ds = full_ds.add_column(col_name, values)
+        typer.echo(f"  Added column '{col_name}' ({sum(1 for v in values if v is not None)} values)")
+
+    full_ds.push_to_hub(dataset_id, split=split)
+    typer.echo(f"✅ Results uploaded to https://huggingface.co/datasets/{dataset_id}")
+
+
 def evaluate(
     evaluation_config_path: Path | None = typer.Option(
         None,
@@ -344,6 +430,28 @@ def evaluate(
         False,
         "--force-language",
         help="Force language hinting for compatible pipelines",
+    ),
+    split: str | None = typer.Option(
+        None,
+        "--split",
+        "-s",
+        help="Override the dataset split to use (e.g. 'train', 'speculative_decoding'). Defaults to the alias's configured split.",
+    ),
+    language: str | None = typer.Option(
+        None,
+        "--language",
+        "-l",
+        help="Filter dataset to a specific language by its 'language' column (e.g. 'en', 'es', 'fr')",
+    ),
+    match_split: str | None = typer.Option(
+        None,
+        "--match-split",
+        help="Only evaluate samples whose 'sample_name' also exists in this other split (e.g. 'autoregressive_decoding')",
+    ),
+    upload_to_hf: bool = typer.Option(
+        False,
+        "--upload-to-hf",
+        help="Upload per-sample metric results as new columns to the HuggingFace dataset after evaluation",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 ) -> None:
@@ -406,9 +514,24 @@ def evaluate(
                 wandb_tags=wandb_tags,
                 use_keywords=use_keywords,
                 force_language=force_language,
+                split=split,
+                language=language,
+                match_split=match_split,
                 verbose=verbose,
             )
         display_result(result)
+
+        if upload_to_hf and evaluation_config_path is None:
+            dataset_config = DatasetRegistry.get_alias_config(dataset_name)
+            effective_split = split or dataset_config.split or "train"
+            upload_results_to_hf(
+                result=result,
+                dataset_id=dataset_config.dataset_id,
+                pipeline_name=pipeline_name,
+                language=language,
+                split=effective_split,
+                subset=dataset_config.subset,
+            )
 
     finally:
         # Restore original working directory

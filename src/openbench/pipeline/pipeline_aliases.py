@@ -532,7 +532,10 @@ def register_pipeline_aliases() -> None:
         default_config={
             "repo_id": "argmaxinc/parakeetkit-pro",
             "model_variant": "nvidia_parakeet-v2",
-            "cli_path": os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "models_cache_dir": "./models_cache",
+            "cli_path": "/Users/berkin/argmax-sdk-swift/.build/arm64-apple-macosx/debug/whisperkitpro-cli",
+                #os.getenv("WHISPERKITPRO_CLI_PATH"),
+            "use_keywords": False,
         },
         description="WhisperKitPro transcription pipeline using the parakeet-v2 version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )

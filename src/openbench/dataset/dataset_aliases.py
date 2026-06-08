@@ -554,6 +554,35 @@ def register_dataset_aliases() -> None:
         description="Common Voice dataset for transcription evaluation with up to 400 samples per language this subset contains only russian",
     )
 
+    _CJK_LANGUAGES = {"zh", "ja", "ko"}
+
+    def _fleurs_tts_tokenize_transcript(row: dict) -> dict:
+        text = row["transcript"]
+        lang = row.get("language", "")
+        if lang in _CJK_LANGUAGES:
+            tokens = list(text)
+        else:
+            tokens = text.split()
+        return {**row, "transcript": tokens}
+
+    _fleurs_tts_column_transforms = {
+        "transcript": _fleurs_tts_tokenize_transcript,
+    }
+
+    DatasetRegistry.register_alias(
+        "qwen-tts-medusa-fleurs",
+        DatasetConfig(
+            dataset_id="argmaxinc/qwen-tts-medusa-fleurs-coreml-evals",
+            split="speculative_decoding",
+            column_mapping={"text": "transcript"},
+            column_transforms=_fleurs_tts_column_transforms,
+        ),
+        supported_pipeline_types={
+            PipelineType.TRANSCRIPTION,
+        },
+        description="Qwen TTS Medusa FLEURS CoreML evaluation dataset (all languages) with synthesized audio and ground truth text.",
+    )
+
     ########## STREAMING TRANSCRIPTION ##########
 
     DatasetRegistry.register_alias(
