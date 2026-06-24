@@ -3,11 +3,10 @@
 
 """Tests for the Speaker Similarity (SIM) metric.
 
-The fast tests below exercise the metric's aggregation and cosine-similarity
-logic without downloading the ~1.2 GB WavLM-large model. The optional
-integration test reproduces the Phase-1 seed-tts-eval numbers on real audio and
-is skipped unless the checkpoint and audio files are available locally (see the
-``OPENBENCH_SIM_*`` environment variables below).
+These tests are self-contained: no model download and no audio files. The
+Phase-1 reproduction test uses frozen embeddings (the WavLM-large vectors for the
+original seed-tts-eval clips, captured once into ``phase1_embeddings.npz``) and
+runs the metric's cosine/aggregation logic on them.
 """
 
 import os
@@ -36,26 +35,20 @@ def test_metric_is_registered():
 
 
 def test_aggregation_mean_and_variance(monkeypatch):
-    """ASV (global value) is the mean SIM and `variance` is the population variance."""
     values = list(PHASE1_PAIRS.values())
     scores = iter(values)
 
     metric = SpeakerSimilarity(checkpoint=None)
-    # Replace the heavy embedding/cosine path with the known Phase-1 scores.
     monkeypatch.setattr(metric, "score", lambda generated, reference: next(scores))
 
     per_pair = [metric(f"gen_{name}.wav", "ref.wav", uri=name) for name in PHASE1_PAIRS]
 
-    # Each call returns that pair's SIM.
     assert per_pair == pytest.approx(values)
-    # Global value (ASV) is the mean.
     assert abs(metric) == pytest.approx(np.mean(values))
-    # variance property (ASV-var) is the population variance.
     assert metric.variance == pytest.approx(np.var(values))
 
 
 def test_score_is_cosine_similarity(monkeypatch):
-    """score() must return the cosine similarity of the two embeddings."""
     emb_a = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
     emb_b = torch.tensor([[4.0, 3.0, 2.0, 1.0]])
     lookup = {"a.wav": emb_a, "b.wav": emb_b}
@@ -72,43 +65,26 @@ def test_unsupported_model_name_raises():
         SpeakerSimilarity(model_name="not_a_real_model")
 
 
-# --- Optional end-to-end reproduction of Phase-1 numbers ---------------------
-# Set these to run the real model. Defaults point at the locations used during
-# Phase 1 so a local run "just works"; the test self-skips if anything is absent.
-_CHECKPOINT = os.environ.get(
-    "OPENBENCH_SIM_CHECKPOINT", os.path.expanduser("~/seed-tts-eval/wavlm_large_finetune.pth")
-)
-_AUDIO_DIR = os.environ.get("OPENBENCH_SIM_AUDIO_DIR", os.path.expanduser("~/Desktop"))
+_FIXTURE = os.path.join(os.path.dirname(__file__), "phase1_embeddings.npz")
 
-_E2E_PAIRS = {
-    "trump_standard": ("trump_cloned-voice.wav", "trump_reference.wav", 0.488),
-    "trump_icl": ("trump-icl_cloned-voice.wav", "trump_reference.wav", 0.655),
-    "berkin_standard": ("berkin_cloned-voice.wav", "berkin_reference.wav", 0.6166049838066101),
-    "berkin_icl": ("berkin-icl_cloned-voice.wav", "berkin_reference.wav", 0.7756228446960449),
+# (generated_key, reference_key, expected Phase-1 SIM)
+_FROZEN_PAIRS = {
+    "trump_standard": ("trump_cloned", "trump_reference", 0.488),
+    "trump_icl": ("trump_icl_cloned", "trump_reference", 0.655),
+    "berkin_standard": ("berkin_cloned", "berkin_reference", 0.6166049838066101),
+    "berkin_icl": ("berkin_icl_cloned", "berkin_reference", 0.7756228446960449),
 }
 
 
-def _e2e_available() -> bool:
-    if not os.path.exists(_CHECKPOINT):
-        return False
-    for generated, reference, _ in _E2E_PAIRS.values():
-        if not (
-            os.path.exists(os.path.join(_AUDIO_DIR, generated)) and os.path.exists(os.path.join(_AUDIO_DIR, reference))
-        ):
-            return False
-    return True
+def test_reproduces_phase1_numbers_from_frozen_embeddings(monkeypatch):
+    embeddings = np.load(_FIXTURE)
 
+    metric = SpeakerSimilarity(checkpoint=None)
+    monkeypatch.setattr(metric, "_embed", lambda key: torch.from_numpy(embeddings[key]))
 
-@pytest.mark.skipif(not _e2e_available(), reason="SIM checkpoint and/or Phase-1 audio files not available locally")
-def test_reproduces_phase1_numbers():
-    metric = SpeakerSimilarity(model_name="wavlm_large", checkpoint=_CHECKPOINT, use_gpu=False)
-    for name, (generated, reference, expected) in _E2E_PAIRS.items():
-        sim = metric(
-            os.path.join(_AUDIO_DIR, generated),
-            os.path.join(_AUDIO_DIR, reference),
-            uri=name,
-        )
+    for name, (generated, reference, expected) in _FROZEN_PAIRS.items():
+        sim = metric(generated, reference, uri=name)
         assert sim == pytest.approx(expected, abs=0.01), f"{name}: got {sim}, expected ~{expected}"
 
-    # Aggregate mean (ASV) over the four pairs.
     assert abs(metric) == pytest.approx(0.634, abs=0.01)
+    assert metric.variance == pytest.approx(0.011, abs=0.005)
