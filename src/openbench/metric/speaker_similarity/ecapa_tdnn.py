@@ -157,7 +157,6 @@ class AttentiveStatsPool(nn.Module):
         else:
             x_in = x
 
-        # DON'T use ReLU here! In experiments, I find ReLU hard to converge.
         alpha = torch.tanh(self.linear1(x_in))
         # alpha = F.relu(self.linear1(x_in))
         alpha = torch.softmax(self.linear2(alpha), dim=2)
