@@ -1,17 +1,6 @@
 # For licensing see accompanying LICENSE.md file.
 # Copyright (C) 2025 Argmax, Inc. All Rights Reserved.
 #
-# This module is a vendored, minimally-modified copy of the ECAPA-TDNN speaker
-# embedding model used by Microsoft UniSpeech's speaker-verification downstream:
-#   https://github.com/microsoft/UniSpeech/blob/main/downstreams/speaker_verification/models/ecapa_tdnn.py
-# which in turn borrows part of its code from:
-#   https://github.com/lawlict/ECAPA-TDNN
-#
-# Only this single file is vendored (not the whole UniSpeech / seed-tts-eval
-# repository) so that OpenBench can reproduce the seed-tts-eval "SIM" speaker
-# similarity metric. The WavLM-large self-supervised upstream is loaded at
-# runtime via torch.hub / the `s3prl` package rather than being copied here.
-#
 # Modifications vs. the original:
 #   * Removed the unused `config_path` (local UpstreamExpert) loading branch,
 #     which referenced a module that is not vendored. Only torch.hub upstreams
