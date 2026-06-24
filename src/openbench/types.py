@@ -12,6 +12,9 @@ class PipelineType(Enum):
     TRANSCRIPTION = "transcription"
     ORCHESTRATION = "orchestration"
     STREAMING_TRANSCRIPTION = "streaming_transcription"
+    # Speaker similarity (e.g. TTS voice-cloning evaluation): metrics that compare
+    # a generated audio clip against a reference clip rather than annotations.
+    SPEAKER_SIMILARITY = "speaker_similarity"
     SPEECH_GENERATION = "speech_generation"
 
 

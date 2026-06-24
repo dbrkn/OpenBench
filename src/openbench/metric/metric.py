@@ -115,3 +115,9 @@ class MetricOptions(Enum):
     KEYWORD_FSCORE = "keyword_fscore"
     KEYWORD_PRECISION = "keyword_precision"
     KEYWORD_RECALL = "keyword_recall"
+
+    # Speaker Similarity (SIM)
+    # Cosine similarity between WavLM-large speaker embeddings of a generated clip
+    # and a reference clip, as used by BytedanceSpeech/seed-tts-eval (cal_sim.sh).
+    # The aggregate mean is reported as ASV and its variance as ASV-var.
+    SIM = "sim"

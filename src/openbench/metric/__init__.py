@@ -13,6 +13,7 @@ from .speaker_count_metrics import (
     SpeakerCountingErrorRate,
     SpeakerCountMeanAbsoluteError,
 )
+from .speaker_similarity import SpeakerSimilarity
 from .streaming_latency_metrics import (
     ConfirmedStreamingLatency,
     ModelTimestampBasedConfirmedStreamingLatency,

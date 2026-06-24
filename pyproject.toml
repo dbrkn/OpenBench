@@ -40,6 +40,9 @@ dependencies = [
     "meeteval>=0.4.3",
     "nemo-toolkit[asr]>=2.6.0",
     "elevenlabs>=2.30.0",
+    # Provides the WavLM-large self-supervised upstream used by the SIM
+    # (speaker similarity) metric's speaker-embedding model.
+    "s3prl>=0.4.10",
 ]
 
 [project.scripts]
