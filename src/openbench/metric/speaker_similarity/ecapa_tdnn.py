@@ -1,11 +1,5 @@
 # For licensing see accompanying LICENSE.md file.
 # Copyright (C) 2025 Argmax, Inc. All Rights Reserved.
-#
-# Modifications vs. the original:
-#   * Removed the unused `config_path` (local UpstreamExpert) loading branch,
-#     which referenced a module that is not vendored. Only torch.hub upstreams
-#     (e.g. "wavlm_large") are supported.
-#   * Removed the original `__main__` smoke-test block.
 
 import torch
 import torch.nn as nn
