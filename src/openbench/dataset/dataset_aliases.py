@@ -584,24 +584,6 @@ def register_dataset_aliases() -> None:
         description="Seed-TTS evaluation set (1088 samples) — reference clip + transcript + language for voice-clone speech generation evaluation (WER + SIM).",
     )
 
-    # [TEMPORARY — for testing the prototype voice-cloning pipeline; remove later]
-    # Ships a reference clip (`audio`) + its transcript (`text`) per row, so it
-    # works as a voice-clone source for argmax-speech-generation-prototype.
-    # Limited to a few samples by default since each sample triggers a full TTS
-    # synthesis; raise `num_samples` (or set to None) for a larger run.
-    DatasetRegistry.register_alias(
-        "qwen-tts-medusa-fleurs",
-        DatasetConfig(
-            dataset_id="argmaxinc/qwen-tts-medusa-fleurs-evals",
-            split="train",
-            num_samples=5,
-        ),
-        supported_pipeline_types={
-            PipelineType.SPEECH_GENERATION,
-        },
-        description="[temporary] Qwen TTS Medusa FLEURS evals — reference clip + transcript for voice-clone testing.",
-    )
-
     ########## STREAMING TRANSCRIPTION ##########
 
     DatasetRegistry.register_alias(
