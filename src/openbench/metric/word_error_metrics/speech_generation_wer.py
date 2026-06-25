@@ -38,20 +38,28 @@ logger = get_logger(__name__)
 DEFAULT_TRANSCRIPTION_ALIAS = "whisperkit-large-v3-turbo"
 
 
-def _build_transcription_sample(audio_path: str) -> TranscriptionSample:
+def _build_transcription_sample(audio_path: str, language: str | None = None) -> TranscriptionSample:
     """Wrap a WAV on disk in a TranscriptionSample so a pipeline can consume it.
 
     The reference is a no-op `Transcript` — transcription pipelines only
     read it via `parse_input` for fields like keyword boosting (which we
     aren't using here), not as ground truth.
+
+    `language` (when provided) is exposed via `TranscriptionSample.language`
+    so a `force_language` transcription pipeline can hint the ASR with the
+    dataset's target language instead of relying on auto-detection — important
+    for multilingual TTS eval sets (e.g. Seed-TTS EN/ZH).
     """
     waveform, sample_rate = librosa.load(audio_path, sr=None)
+    extra_info: dict = {}
+    if language:
+        extra_info["language"] = language
     return TranscriptionSample(
         audio_name=Path(audio_path).stem,
         waveform=waveform,
         sample_rate=int(sample_rate),
         reference=Transcript(words=[]),
-        extra_info={},
+        extra_info=extra_info,
     )
 
 
@@ -73,6 +81,7 @@ class SpeechGenerationWordErrorRate(WordErrorRate):
     def __init__(
         self,
         transcription_config: TranscriptionConfig | str | None = None,
+        force_language: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -85,6 +94,11 @@ class SpeechGenerationWordErrorRate(WordErrorRate):
                 f"{type(transcription_config).__name__}"
             )
         self._transcription_config = transcription_config
+        # When True, the dataset's per-sample language is forwarded to the ASR
+        # (via TranscriptionSample.language + the pipeline's force_language path)
+        # rather than letting Whisper auto-detect — the right default for
+        # multilingual TTS eval sets where the target language is known.
+        self._force_language = force_language
         self._pipeline: Pipeline | None = None
 
     def _get_pipeline(self) -> Pipeline:
@@ -111,6 +125,12 @@ class SpeechGenerationWordErrorRate(WordErrorRate):
             self._pipeline = PipelineRegistry.create_pipeline(spec)
         else:
             self._pipeline = pipeline_class(spec)
+
+        # Force the ASR to honour the dataset's per-sample language. The flag
+        # lives on TranscriptionConfig; pipelines that don't support forcing
+        # (e.g. NeMo/AssemblyAI) just warn and ignore it.
+        if self._force_language and hasattr(self._pipeline.config, "force_language"):
+            self._pipeline.config.force_language = True
         return self._pipeline
 
     def compute_components(self, reference: Transcript, hypothesis: GeneratedAudio, **kwargs) -> dict[str, int]:
@@ -120,7 +140,10 @@ class SpeechGenerationWordErrorRate(WordErrorRate):
             reference: Reference transcript built from the original prompt.
             hypothesis: Generated audio (path + duration) produced by a TTS pipeline.
         """
-        sample = _build_transcription_sample(hypothesis.audio_path)
+        # The runner unpacks the dataset sample's extra_info into kwargs, so the
+        # target language (when the dataset provides one) arrives here.
+        language = kwargs.get("language") if self._force_language else None
+        sample = _build_transcription_sample(hypothesis.audio_path, language=language)
         pipeline_output = self._get_pipeline()(sample)
         hypothesis_transcript: Transcript = pipeline_output.prediction
         logger.debug("TTS WER hypothesis transcript: " + hypothesis_transcript.get_transcript_string()[:120] + "...")

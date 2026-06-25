@@ -171,6 +171,13 @@ class BenchmarkRunner:
             )
             metrics_logging_string += formatted_string
 
+        # Sample fully scored — let the pipeline drop any transient per-sample
+        # inputs (e.g. a materialized reference clip). Never let cleanup abort.
+        try:
+            pipeline.cleanup_sample(output)
+        except Exception as e:  # noqa: BLE001 - cleanup is best-effort
+            logger.warning(f"cleanup_sample failed for sample {sample_id} ({sample.audio_name}): {e}")
+
         # Create logging string
         logging_string = (
             "\n=========================================================\n"
