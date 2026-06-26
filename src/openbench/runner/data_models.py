@@ -85,7 +85,9 @@ class TaskResult(BaseModel):
     pipeline_name: str = Field(..., description="The name of the pipeline")
     metric_name: str = Field(..., description="The name of the metric")
     result: float | None = Field(..., description="The result of the metric")
-    detailed_result: dict[str, float | None] = Field(
+    # Values are usually numeric metric components, but a metric may also attach
+    # non-numeric per-sample detail (e.g. the speech-gen WER ASR transcription).
+    detailed_result: dict[str, float | str | None] = Field(
         None,
         description="The detailed results of the metric i.e. breakdown by its components allowing \
         for more granular analysis",
