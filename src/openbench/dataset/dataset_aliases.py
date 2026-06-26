@@ -586,6 +586,20 @@ def register_dataset_aliases() -> None:
         description="Seed-TTS evaluation set (1088 samples) — reference clip + transcript + language for voice-clone speech generation evaluation (WER + SIM).",
     )
 
+    # Seed-TTS eval v2: same schema as seedtts-eval (audio + target_text/prompt_text
+    # + language + sample_idx), an updated 1088-sample voice-clone eval set.
+    DatasetRegistry.register_alias(
+        "seedtts-eval-v2",
+        DatasetConfig(
+            dataset_id="argmaxinc/seedTTS-eval-v2",
+            split="train",
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description="Seed-TTS evaluation set v2 (1088 samples) — reference clip + transcript + language for voice-clone speech generation evaluation (WER + SIM).",
+    )
+
     ########## STREAMING TRANSCRIPTION ##########
 
     DatasetRegistry.register_alias(
