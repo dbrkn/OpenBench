@@ -229,7 +229,18 @@ class BenchmarkRunner:
         import numpy as np
         import soundfile as sf
 
-        metrics_by_name = {self._normalize_metric_name(t.metric_name): t.result for t in task_results}
+        sim = wer = None
+        transcription = ""
+        for t in task_results:
+            name = self._normalize_metric_name(t.metric_name)
+            if name == "sim":
+                sim = t.result
+            elif name == "wer":
+                wer = t.result
+                # The ASR transcription used to compute WER rides along in the
+                # metric's per-sample detailed output (see speech_generation_wer).
+                transcription = (t.detailed_result or {}).get("transcription") or ""
+
         try:
             gen_array, gen_sr = sf.read(output.prediction.audio_path, dtype="float32")
         except Exception as e:  # noqa: BLE001 - skip the row rather than abort the run
@@ -240,12 +251,14 @@ class BenchmarkRunner:
         return {
             # Prefer the dataset's stable id (e.g. source file name) over the loop index.
             "sample_idx": str(sample.extra_info.get("sample_idx", sample_id)),
-            "text": sample.text,
             "language": sample.extra_info.get("language") or "",
             "reference_audio": reference,
             "generated_audio": {"array": gen_array, "sampling_rate": int(gen_sr)},
-            "SIM": metrics_by_name.get("sim"),
-            "WER": metrics_by_name.get("wer"),
+            # prompt_text / transcription / WER / SIM kept adjacent for analysis.
+            "prompt_text": sample.text,
+            "transcription": transcription,
+            "WER": wer,
+            "SIM": sim,
         }
 
     def _run_pipeline_on_dataset_parallel(

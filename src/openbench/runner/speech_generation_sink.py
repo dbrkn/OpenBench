@@ -75,12 +75,15 @@ class SpeechGenerationResultSink:
         features = Features(
             {
                 "sample_idx": Value("string"),
-                "text": Value("string"),
                 "language": Value("string"),
                 "reference_audio": Audio(),
                 "generated_audio": Audio(),
-                "SIM": Value("float32"),
+                # Kept adjacent for easy analysis: synthesized text, its ASR
+                # transcription, and the two scores.
+                "prompt_text": Value("string"),
+                "transcription": Value("string"),
                 "WER": Value("float32"),
+                "SIM": Value("float32"),
             }
         )
         rows, self._buffer = self._buffer, []

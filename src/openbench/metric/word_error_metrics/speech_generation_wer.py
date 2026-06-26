@@ -147,4 +147,9 @@ class SpeechGenerationWordErrorRate(WordErrorRate):
         pipeline_output = self._get_pipeline()(sample)
         hypothesis_transcript: Transcript = pipeline_output.prediction
         logger.debug("TTS WER hypothesis transcript: " + hypothesis_transcript.get_transcript_string()[:120] + "...")
-        return super().compute_components(reference, hypothesis_transcript, **kwargs)
+        components = super().compute_components(reference, hypothesis_transcript, **kwargs)
+        # Surface the ASR transcription used for WER. It is NOT a declared metric
+        # component, so pyannote never accumulates it into the global result; it
+        # only rides along in the per-sample detailed output for analysis/export.
+        components["transcription"] = hypothesis_transcript.get_transcript_string()
+        return components
