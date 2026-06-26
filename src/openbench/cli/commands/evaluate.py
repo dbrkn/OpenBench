@@ -179,6 +179,8 @@ def run_alias_mode(
     force_language: bool,
     pipeline_config: list[str] | None,
     verbose: bool,
+    hf_results_repo: str | None = None,
+    hf_results_flush_every: int = 100,
 ) -> BenchmarkResult:
     """Run evaluation using pipeline and dataset aliases."""
     try:
@@ -235,6 +237,8 @@ def run_alias_mode(
             wandb_config=wandb_config,
             datasets={dataset_name: dataset_config},
             metrics={metric: {} for metric in metrics},
+            hf_results_repo=hf_results_repo,
+            hf_results_flush_every=hf_results_flush_every,
         )
 
         # Create runner
@@ -368,6 +372,20 @@ def evaluate(
             "`-pc force_language=true`."
         ),
     ),
+    hf_results_repo: str | None = typer.Option(
+        None,
+        "--hf-results-repo",
+        help=(
+            "Push per-sample speech-generation results (reference/generated audio + SIM/WER) "
+            "incrementally to this Hugging Face dataset repo as append-only parquet shards. "
+            "Example: argmaxinc/openbench-speech-generation-benchmark"
+        ),
+    ),
+    hf_results_flush_every: int = typer.Option(
+        100,
+        "--hf-results-flush-every",
+        help="Flush buffered per-sample results to the HF repo every N samples (used with --hf-results-repo).",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 ) -> None:
     """Run evaluation benchmarks.
@@ -430,6 +448,8 @@ def evaluate(
                 use_keywords=use_keywords,
                 force_language=force_language,
                 pipeline_config=pipeline_config,
+                hf_results_repo=hf_results_repo,
+                hf_results_flush_every=hf_results_flush_every,
                 verbose=verbose,
             )
         display_result(result)

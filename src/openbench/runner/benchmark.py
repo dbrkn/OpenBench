@@ -43,6 +43,8 @@ class ProcessingResult(NamedTuple):
     task_results: list[TaskResult]
     sample_id: int
     metrics_string: str
+    # Per-sample row for the speech-generation HF results sink (None otherwise).
+    result_row: dict | None = None
 
 
 class BenchmarkRunner:
@@ -68,6 +70,17 @@ class BenchmarkRunner:
             PipelineType.STREAMING_TRANSCRIPTION: TranscriptionWandbLogger,
             PipelineType.SPEECH_GENERATION: SpeechGenerationWandbLogger,
         }
+
+    def _maybe_create_results_sink(self, pipeline: Pipeline):
+        """Create the incremental HF results sink if configured for this pipeline."""
+        if not self.config.hf_results_repo or pipeline.pipeline_type != PipelineType.SPEECH_GENERATION:
+            return None
+        from .speech_generation_sink import SpeechGenerationResultSink
+
+        return SpeechGenerationResultSink(
+            repo_id=self.config.hf_results_repo,
+            flush_every=self.config.hf_results_flush_every,
+        )
 
     def _get_metrics(self, pipeline: Pipeline) -> dict[str, BaseMetric]:
         metrics_dict = {}
@@ -171,6 +184,12 @@ class BenchmarkRunner:
             )
             metrics_logging_string += formatted_string
 
+        # Build the per-sample results-sink row BEFORE cleanup, while the
+        # generated audio file still exists on disk.
+        result_row = None
+        if self.config.hf_results_repo and pipeline.pipeline_type == PipelineType.SPEECH_GENERATION:
+            result_row = self._build_speech_generation_row(sample, output, task_results, sample_id)
+
         # Sample fully scored — let the pipeline drop any transient per-sample
         # inputs (e.g. a materialized reference clip). Never let cleanup abort.
         try:
@@ -194,7 +213,40 @@ class BenchmarkRunner:
             "=========================================================\n"
         )
 
-        return ProcessingResult(sample_result, task_results, sample_id, logging_string)
+        return ProcessingResult(sample_result, task_results, sample_id, logging_string, result_row)
+
+    @staticmethod
+    def _normalize_metric_name(name) -> str:
+        return str(getattr(name, "value", name)).lower()
+
+    def _build_speech_generation_row(self, sample, output, task_results, sample_id) -> dict | None:
+        """Assemble one row for the speech-generation HF results sink.
+
+        Mirrors the seedTTS-eval columns (text/language/sample_idx/audio) and
+        adds reference_audio, generated_audio and per-sample SIM/WER. Audio is
+        carried as in-memory arrays so it embeds into the parquet shard.
+        """
+        import numpy as np
+        import soundfile as sf
+
+        metrics_by_name = {self._normalize_metric_name(t.metric_name): t.result for t in task_results}
+        try:
+            gen_array, gen_sr = sf.read(output.prediction.audio_path, dtype="float32")
+        except Exception as e:  # noqa: BLE001 - skip the row rather than abort the run
+            logger.warning(f"Could not read generated audio for sample {sample_id}: {e}")
+            return None
+
+        reference = {"array": np.asarray(sample.waveform, dtype=np.float32), "sampling_rate": int(sample.sample_rate)}
+        return {
+            "sample_idx": sample_id,
+            "text": sample.text,
+            "language": sample.extra_info.get("language") or "",
+            "audio": reference,
+            "reference_audio": reference,
+            "generated_audio": {"array": gen_array, "sampling_rate": int(gen_sr)},
+            "SIM": metrics_by_name.get("sim"),
+            "WER": metrics_by_name.get("wer"),
+        }
 
     def _run_pipeline_on_dataset_parallel(
         self,
@@ -301,6 +353,7 @@ class BenchmarkRunner:
         pipeline: Pipeline,
         dataset: BaseDataset,
         dataset_name: str,
+        sink=None,
     ) -> tuple[
         list[DiarizationSampleResult | TranscriptionSampleResult],
         list[TaskResult],
@@ -322,6 +375,10 @@ class BenchmarkRunner:
             )
             per_sample_results.append(processing_result.sample_result)
             per_task_results.extend(processing_result.task_results)
+
+            # Incrementally push per-sample results (flushes every N internally).
+            if sink is not None and processing_result.result_row is not None:
+                sink.add(processing_result.result_row)
 
             logger.info(processing_result.metrics_string)
 
@@ -376,7 +433,15 @@ class BenchmarkRunner:
 
                     logger.info(f"Evaluating {pipeline.__class__.__name__} on {dataset_name}...")
 
+                    # Optional incremental HF results sink (speech generation only).
+                    sink = self._maybe_create_results_sink(pipeline)
+
                     if pipeline.config.num_worker_processes:
+                        if sink is not None:
+                            logger.warning(
+                                "hf_results_repo is set but the pipeline runs in parallel mode; "
+                                "the incremental results sink is only supported in sequential mode and will be skipped."
+                            )
                         logger.info(f"Executing in parallel mode with {pipeline.config.num_worker_processes} workers")
                         results = self._run_pipeline_on_dataset_parallel(
                             pipeline,
@@ -385,7 +450,11 @@ class BenchmarkRunner:
                         )
                     else:
                         logger.info("Executing in sequential mode")
-                        results = self._run_pipeline_on_dataset(pipeline, ds, dataset_name)
+                        try:
+                            results = self._run_pipeline_on_dataset(pipeline, ds, dataset_name, sink=sink)
+                        finally:
+                            if sink is not None:
+                                sink.close()
 
                     sample_results, task_results, global_results = results
                     wandb_logger(global_results, task_results, sample_results)

@@ -27,6 +27,16 @@ class BenchmarkConfig(BaseModel):
         ..., description="The metrics that will be used for each task"
     )
     datasets: dict[str, DatasetConfig] = Field(..., description="Datasets to evaluate")
+    hf_results_repo: str | None = Field(
+        None,
+        description=(
+            "If set, per-sample speech-generation results (audio + SIM/WER) are pushed "
+            "incrementally to this Hugging Face dataset repo as append-only parquet shards."
+        ),
+    )
+    hf_results_flush_every: int = Field(
+        100, description="Flush buffered per-sample results to the HF repo every N samples."
+    )
 
     class Config:
         arbitrary_types_allowed = True
