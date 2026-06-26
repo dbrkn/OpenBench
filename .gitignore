@@ -48,3 +48,12 @@ miscellaneous/
 downloaded_datasets/
 
 *.sh
+
+*.csv
+*.ipynb
+*.png
+*.pdf
+*.flac
+*.wav
+*.json
+*.txt

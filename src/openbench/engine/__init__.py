@@ -9,6 +9,12 @@ from .argmax_oss_engine import (
     TtsCliOutput,
     resolve_argmax_oss_cache_dir,
 )
+from .argmax_prototype_engine import (
+    ArgmaxPrototypeEngine,
+    ArgmaxPrototypeEngineConfig,
+    PrototypeTtsInput,
+    PrototypeTtsOutput,
+)
 from .deepgram_engine import DeepgramApi, DeepgramApiResponse
 from .elevenlabs_engine import ElevenLabsApi, ElevenLabsApiResponse
 from .openai_engine import OpenAIApi
@@ -38,6 +44,10 @@ __all__ = [
     "TtsCliInput",
     "TtsCliOutput",
     "resolve_argmax_oss_cache_dir",
+    "ArgmaxPrototypeEngine",
+    "ArgmaxPrototypeEngineConfig",
+    "PrototypeTtsInput",
+    "PrototypeTtsOutput",
     "DeepgramApi",
     "DeepgramApiResponse",
     "ElevenLabsApi",

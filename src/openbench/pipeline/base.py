@@ -93,3 +93,14 @@ class Pipeline(ABC):
         if parsed_output.prediction_time is None:
             parsed_output.prediction_time = prediction_time
         return parsed_output
+
+    def cleanup_sample(self, output: PipelineOutput) -> None:
+        """Per-sample teardown, called by the runner once a sample is fully scored.
+
+        Runs after all metrics for the sample have been computed, so a pipeline
+        can drop transient inputs it materialized (e.g. a reference clip that
+        both the pipeline and a downstream metric needed) without affecting
+        metric computation. The default is a no-op; cleanup failures must never
+        abort the run (the runner guards this call).
+        """
+        return None

@@ -261,6 +261,15 @@ class GeneratedAudio(BaseModel):
         None,
         description="Sample rate of the generated audio in Hz, if known.",
     )
+    reference_audio_path: str | None = Field(
+        None,
+        description=(
+            "Path to the target-speaker reference audio this clip should resemble "
+            "(e.g. the voice-clone prompt audio). Set by voice-cloning pipelines so "
+            "the speaker-similarity (SIM) metric can compare the generated clip "
+            "against the intended speaker. None for non-cloning pipelines."
+        ),
+    )
 
     def to_annotation_file(self, output_dir: str, filename: str) -> str:
         """Persist the generated audio under output_dir as `{filename}.wav`.

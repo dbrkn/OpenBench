@@ -5,9 +5,15 @@ from .speech_generation_argmax_oss import (
     ArgmaxOpenSourceSpeechGenerationConfig,
     ArgmaxOpenSourceSpeechGenerationPipeline,
 )
+from .speech_generation_argmax_prototype import (
+    ArgmaxPrototypeSpeechGenerationConfig,
+    ArgmaxPrototypeSpeechGenerationPipeline,
+)
 
 
 __all__ = [
     "ArgmaxOpenSourceSpeechGenerationConfig",
     "ArgmaxOpenSourceSpeechGenerationPipeline",
+    "ArgmaxPrototypeSpeechGenerationConfig",
+    "ArgmaxPrototypeSpeechGenerationPipeline",
 ]
