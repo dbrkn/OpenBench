@@ -77,7 +77,6 @@ class SpeechGenerationResultSink:
                 "sample_idx": Value("int64"),
                 "text": Value("string"),
                 "language": Value("string"),
-                "audio": Audio(),
                 "reference_audio": Audio(),
                 "generated_audio": Audio(),
                 "SIM": Value("float32"),

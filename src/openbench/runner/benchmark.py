@@ -241,7 +241,6 @@ class BenchmarkRunner:
             "sample_idx": sample_id,
             "text": sample.text,
             "language": sample.extra_info.get("language") or "",
-            "audio": reference,
             "reference_audio": reference,
             "generated_audio": {"array": gen_array, "sampling_rate": int(gen_sr)},
             "SIM": metrics_by_name.get("sim"),
