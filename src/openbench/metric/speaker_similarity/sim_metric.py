@@ -198,3 +198,36 @@ class SpeakerSimilarity(BaseMetric):
             return 0.0
         mean = self.accumulated_["sim_sum"] / count
         return self.accumulated_["sim_squared_sum"] / count - mean * mean
+
+
+@MetricRegistry.register_metric(PipelineType.SPEECH_GENERATION, MetricOptions.SIM)
+class SpeechGenerationSpeakerSimilarity(SpeakerSimilarity):
+    """SIM metric for speech-generation pipelines.
+
+    The benchmark runner invokes every metric uniformly as
+    ``metric(hypothesis=prediction, reference=sample.reference, ...)``. For a
+    speech-generation pipeline the ``hypothesis`` is a ``GeneratedAudio`` (the
+    synthesized clip) and ``reference`` is the prompt *transcript* (consumed by
+    WER, not SIM). SIM instead needs the target-speaker *audio*, which voice-
+    cloning pipelines record on the prediction as ``reference_audio_path``; we
+    fall back to a ``reference_audio`` / ``ref_audio`` keyword if a pipeline does
+    not set it.
+
+    Accepts the same constructor kwargs as :class:`SpeakerSimilarity`
+    (``model_name``, ``checkpoint``, ``use_gpu``, ``device``).
+    """
+
+    def compute_components(self, reference, hypothesis, **kwargs) -> Details:
+        generated_audio = hypothesis.audio_path
+        reference_audio = (
+            getattr(hypothesis, "reference_audio_path", None)
+            or kwargs.get("reference_audio")
+            or kwargs.get("ref_audio")
+        )
+        if not reference_audio:
+            raise ValueError(
+                "SIM requires a target-speaker reference clip, but none was found. "
+                "Use a voice-cloning pipeline that sets `reference_audio_path` on its "
+                "GeneratedAudio prediction, or supply a `ref_audio` in the sample's extra_info."
+            )
+        return super().compute_components(generated_audio=generated_audio, reference_audio=reference_audio)
