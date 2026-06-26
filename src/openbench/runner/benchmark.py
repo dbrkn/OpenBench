@@ -377,15 +377,26 @@ class BenchmarkRunner:
 
         metrics_dict = self._get_metrics(pipeline)
         dataset_length = len(dataset)
+        failed_samples: list[int] = []
 
         for sample_id, sample in enumerate(dataset):
-            processing_result = self._process_single_sample(
-                sample_and_id=(sample_id, sample),
-                pipeline=pipeline,
-                dataset_name=dataset_name,
-                metrics_dict=metrics_dict,
-                dataset_length=dataset_length,
-            )
+            try:
+                processing_result = self._process_single_sample(
+                    sample_and_id=(sample_id, sample),
+                    pipeline=pipeline,
+                    dataset_name=dataset_name,
+                    metrics_dict=metrics_dict,
+                    dataset_length=dataset_length,
+                )
+            except Exception as e:  # noqa: BLE001 - keep the benchmark going past a bad sample
+                if not self.config.continue_on_sample_error:
+                    raise
+                failed_samples.append(sample_id)
+                logger.error(
+                    f"Skipping sample {sample_id} ({getattr(sample, 'audio_name', '?')}) after failure: {e}"
+                )
+                continue
+
             per_sample_results.append(processing_result.sample_result)
             per_task_results.extend(processing_result.task_results)
 
@@ -394,6 +405,12 @@ class BenchmarkRunner:
                 sink.add(processing_result.result_row)
 
             logger.info(processing_result.metrics_string)
+
+        if failed_samples:
+            logger.warning(
+                f"{len(failed_samples)}/{dataset_length} samples failed and were skipped on "
+                f"{dataset_name}: {failed_samples}"
+            )
 
         global_results = get_global_results(
             metrics_dict=metrics_dict,

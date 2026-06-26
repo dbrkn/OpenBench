@@ -141,6 +141,15 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         default="mlx",
         description="--code-decoder-backend. Defaults to 'mlx'; set 'coreml' for the CoreML asset, or None for the CLI default.",
     )
+    mlx_max_sequence_length: int | None = Field(
+        default=256,
+        description=(
+            "--mlx-max-sequence-length. Caps the MLX talker's generation length. Defaults to 256 to "
+            "match the CoreML SpeechDecoder's kv_len_256 cache; without this cap the talker may emit "
+            "up to 512 frames and overflow the decoder (IndexError). Only applied when "
+            "code_decoder_backend='mlx'; None uses the CLI default."
+        ),
+    )
     speaker_encoder_variant: str | None = Field(
         default="W16A16-10s",
         description="--speaker-encoder-variant (SpeakerEncoder voice-clone CoreML asset). Only used in voice_clone mode; None uses the CLI default.",
@@ -199,6 +208,9 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
             args.extend(["--instruction", self.instruction])
         if self.code_decoder_backend is not None:
             args.extend(["--code-decoder-backend", self.code_decoder_backend])
+        # Cap the MLX talker so it can't out-generate the CoreML SpeechDecoder's kv cache.
+        if self.code_decoder_backend == "mlx" and self.mlx_max_sequence_length is not None:
+            args.extend(["--mlx-max-sequence-length", str(self.mlx_max_sequence_length)])
         return args
 
 
