@@ -74,7 +74,7 @@ class SpeechGenerationResultSink:
 
         features = Features(
             {
-                "sample_idx": Value("int64"),
+                "sample_idx": Value("string"),
                 "text": Value("string"),
                 "language": Value("string"),
                 "reference_audio": Audio(),

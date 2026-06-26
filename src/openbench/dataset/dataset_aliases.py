@@ -568,10 +568,12 @@ def register_dataset_aliases() -> None:
         description="Customer service TTS prompts with vocalized audio for speech generation evaluation.",
     )
 
-    # Seed-TTS eval set (voice cloning): each row ships a target-speaker
-    # reference clip (`audio` @ 16kHz) + its transcript (`text`) and `language`,
-    # consumed by argmax-speech-generation-prototype's voice-clone mode. SIM
-    # compares the generated clip against `audio`; WER transcribes it vs `text`.
+    # Seed-TTS eval set (voice cloning): each row ships a target-speaker reference
+    # clip (`audio` @ 16kHz) with its transcript (`target_text`, used as --ref-text),
+    # the distinct text to synthesize (`prompt_text`, used as --text), `language`,
+    # and a stable id (`sample_idx`, the source file name). Consumed by
+    # argmax-speech-generation-prototype's voice-clone mode: SIM compares the
+    # generated clip against `audio`; WER transcribes it vs `prompt_text`.
     DatasetRegistry.register_alias(
         "seedtts-eval",
         DatasetConfig(

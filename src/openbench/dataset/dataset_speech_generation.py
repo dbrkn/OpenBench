@@ -16,21 +16,30 @@ class SpeechGenerationExtraInfo(TypedDict, total=False):
     For voice-cloning datasets (e.g. seedTTS), `ref_audio` points at the
     target-speaker prompt clip and `ref_text` is its transcript. The prototype
     pipeline consumes these to drive `tts-cli --mode voice_clone`, and the SIM
-    metric compares the generated clip against `ref_audio`.
+    metric compares the generated clip against `ref_audio`. `sample_idx` carries
+    the dataset's stable per-sample id (e.g. the source file name).
     """
 
     language: str
     ref_audio: str
     ref_text: str
+    sample_idx: str
 
 
-class SpeechGenerationRow(TypedDict):
+class SpeechGenerationRow(TypedDict, total=False):
     """Expected row structure for speech generation.
 
-    Requires 'text' (the prompt string). No audio needed.
+    The text to synthesize (also the WER ground truth) comes from `prompt_text`
+    (voice-clone datasets) or, for plain TTS datasets, the legacy `text` column.
+    For voice cloning, `target_text` is the transcript of the reference clip
+    (`audio`), used as `--ref-text`.
     """
 
+    prompt_text: str
     text: str
+    target_text: str
+    language: str
+    sample_idx: str
 
 
 class SpeechGenerationSample(BaseSample[Transcript, SpeechGenerationExtraInfo]):
@@ -62,7 +71,9 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
     pipeline output, not this input audio.
     """
 
-    _expected_columns = ["text"]
+    # No hard-required column: the synthesis text may be `prompt_text` (voice-clone
+    # datasets) or the legacy `text` (plain TTS datasets); validated in prepare_sample.
+    _expected_columns: list[str] = []
     _sample_class = SpeechGenerationSample
 
     @staticmethod
@@ -88,19 +99,33 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
         return audio_name, dummy_waveform, dummy_sample_rate
 
     def prepare_sample(self, row: SpeechGenerationRow) -> tuple[Transcript, SpeechGenerationExtraInfo]:
-        """Build the reference transcript from the prompt text."""
-        text = row["text"]
-        words = text.split()
-        reference = Transcript.from_words_info(
-            words=words,
-        )
+        """Build the synthesis reference transcript and the per-sample extra info.
+
+        The reference `Transcript` is the text to synthesize and the WER ground
+        truth: it comes from `prompt_text` (voice-clone datasets) or the legacy
+        `text` column. For voice cloning, `target_text` is the transcript of the
+        reference clip and is exposed as `ref_text` (`tts-cli --ref-text`).
+        """
+        synth_text = row.get("prompt_text")
+        if synth_text is None:
+            synth_text = row.get("text")
+        if synth_text is None:
+            raise ValueError(
+                "Speech-generation dataset row must provide a 'prompt_text' (or legacy 'text') column "
+                "with the text to synthesize."
+            )
+        reference = Transcript.from_words_info(words=synth_text.split())
 
         extra_info: SpeechGenerationExtraInfo = {}
-        if "language" in row:
+        if row.get("language") is not None:
             extra_info["language"] = row["language"]
-        # When the dataset ships a reference clip, its transcript doubles as the
-        # voice-clone `ref_text` (the pipeline materializes the clip as ref_audio).
+        # Stable per-sample id (e.g. source file name) for downstream result rows.
+        if row.get("sample_idx") is not None:
+            extra_info["sample_idx"] = str(row["sample_idx"])
+        # When the dataset ships a reference clip, its transcript is the voice-clone
+        # `ref_text`. New voice-clone schema uses `target_text`; plain datasets reuse
+        # the synthesis text.
         if self._has_reference_audio(row):
-            extra_info["ref_text"] = text
+            extra_info["ref_text"] = row.get("target_text") or synth_text
 
         return reference, extra_info

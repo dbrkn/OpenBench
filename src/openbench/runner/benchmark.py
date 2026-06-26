@@ -238,7 +238,8 @@ class BenchmarkRunner:
 
         reference = {"array": np.asarray(sample.waveform, dtype=np.float32), "sampling_rate": int(sample.sample_rate)}
         return {
-            "sample_idx": sample_id,
+            # Prefer the dataset's stable id (e.g. source file name) over the loop index.
+            "sample_idx": str(sample.extra_info.get("sample_idx", sample_id)),
             "text": sample.text,
             "language": sample.extra_info.get("language") or "",
             "reference_audio": reference,
