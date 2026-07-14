@@ -5,6 +5,7 @@
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from argmaxtools.utils import _maybe_git_clone, get_logger
@@ -184,10 +185,37 @@ class ArgmaxOpenSourceEngine:
             cmd.extend(["--language", input.language])
 
         logger.debug("Argmax OSS transcribe: %s", cmd)
-        try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"argmax-cli transcribe failed: {e.stderr}") from e
+        _transient_markers = (
+            "timed out",
+            "timeout",
+            "NSURLErrorDomain",
+            "Model not found",
+            "could not connect",
+            "network connection was lost",
+            "appears to be offline",
+        )
+        _max_attempts = 6
+        result = None
+        for _attempt in range(1, _max_attempts + 1):
+            try:
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                break
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr or ""
+                is_transient = any(m.lower() in stderr.lower() for m in _transient_markers)
+                if is_transient and _attempt < _max_attempts:
+                    backoff = min(60, 5 * _attempt)
+                    logger.warning(
+                        "argmax-cli transcribe transient failure (attempt %d/%d), "
+                        "retrying in %ds: %s",
+                        _attempt,
+                        _max_attempts,
+                        backoff,
+                        stderr.strip().splitlines()[-1] if stderr.strip() else stderr,
+                    )
+                    time.sleep(backoff)
+                    continue
+                raise RuntimeError(f"argmax-cli transcribe failed: {e.stderr}") from e
 
         json_report_path = report_dir / f"{input.audio_path.stem}.json"
         srt_report_path = report_dir / f"{input.audio_path.stem}.srt"
