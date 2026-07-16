@@ -600,6 +600,46 @@ def register_dataset_aliases() -> None:
         description="Seed-TTS smoke-test subset (first 3 samples) for quick pipeline validation.",
     )
 
+    # Voice-clone eval set curated from argmaxinc/force_aligner_speech_regions
+    # (call-center recordings, 13 speakers) in the seedTTS-eval format. Each row:
+    # same-speaker reference clip (`audio` @ 16kHz) + its transcript
+    # (`prompt_text` -> `ref_text`) and a different-segment `target_text` -> `text`
+    # to synthesize. WER transcribes the clone vs `text`; SIM compares against the
+    # reference clip (ground-truth target audio recoverable from the source
+    # dataset via `sample_idx`).
+    DatasetRegistry.register_alias(
+        "voiceclone-eval",
+        DatasetConfig(
+            dataset_id="argmaxinc/voiceclone-eval",
+            split="train",
+            column_mapping={"target_text": "text", "prompt_text": "ref_text"},
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description=(
+            "Voice-clone evaluation set (157 samples, 13 call-center speakers) built from "
+            "force_aligner_speech_regions in seedTTS-eval format — reference clip + ICL transcript "
+            "+ same-speaker target text for voice-clone speech generation evaluation (WER + SIM)."
+        ),
+    )
+
+    # Smoke-test subset of voiceclone-eval: same dataset, capped to the first 3
+    # samples for quick pipeline validation before a full 157-sample run.
+    DatasetRegistry.register_alias(
+        "voiceclone-eval-mini",
+        DatasetConfig(
+            dataset_id="argmaxinc/voiceclone-eval",
+            split="train",
+            num_samples=3,
+            column_mapping={"target_text": "text", "prompt_text": "ref_text"},
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description="Voice-clone smoke-test subset (first 3 samples) for quick pipeline validation.",
+    )
+
     # Refclone / reference-length study: built locally from
     # argmaxinc/force_aligner_speech_regions via scripts/refclone/build_dataset.py.
     # Each row: target text + real target audio (SIM) + variable-length ref_audio/ref_text (ICL).
