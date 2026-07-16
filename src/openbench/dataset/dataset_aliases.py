@@ -569,10 +569,12 @@ def register_dataset_aliases() -> None:
         description="Customer service TTS prompts with vocalized audio for speech generation evaluation.",
     )
 
-    # Seed-TTS eval set (voice cloning): each row ships a target-speaker
-    # reference clip (`audio` @ 16kHz) + its transcript (`text`) and `language`,
-    # consumed by argmax-speech-generation-prototype's voice-clone mode. SIM
-    # compares the generated clip against `audio`; WER transcribes it vs `text`.
+    # Seed-TTS eval set (voice cloning): each row ships a target-speaker reference
+    # clip (`audio` @ 16kHz) with its transcript (`target_text`, used as --ref-text),
+    # the distinct text to synthesize (`prompt_text`, used as --text), `language`,
+    # and a stable id (`sample_idx`, the source file name). Consumed by
+    # argmax-speech-generation-prototype's voice-clone mode: SIM compares the
+    # generated clip against `audio`; WER transcribes it vs `prompt_text`.
     DatasetRegistry.register_alias(
         "seedtts-eval",
         DatasetConfig(
@@ -583,6 +585,20 @@ def register_dataset_aliases() -> None:
             PipelineType.SPEECH_GENERATION,
         },
         description="Seed-TTS evaluation set (1088 samples) — reference clip + transcript + language for voice-clone speech generation evaluation (WER + SIM).",
+    )
+
+    # Seed-TTS eval v2: same schema as seedtts-eval (audio + target_text/prompt_text
+    # + language + sample_idx), an updated 1088-sample voice-clone eval set.
+    DatasetRegistry.register_alias(
+        "seedtts-eval-v2",
+        DatasetConfig(
+            dataset_id="argmaxinc/seedTTS-eval-v2",
+            split="train",
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description="Seed-TTS evaluation set v2 (1088 samples) — reference clip + transcript + language for voice-clone speech generation evaluation (WER + SIM).",
     )
 
     # Seed-TTS smoke-test subset of seedtts-eval: same dataset, capped to the first 3
@@ -601,26 +617,24 @@ def register_dataset_aliases() -> None:
     )
 
     # Voice-clone eval set curated from argmaxinc/force_aligner_speech_regions
-    # (call-center recordings, 13 speakers) in the seedTTS-eval format. Each row:
-    # same-speaker reference clip (`audio` @ 16kHz) + its transcript
-    # (`prompt_text` -> `ref_text`) and a different-segment `target_text` -> `text`
-    # to synthesize. WER transcribes the clone vs `text`; SIM compares against the
-    # reference clip (ground-truth target audio recoverable from the source
-    # dataset via `sample_idx`).
+    # (call-center recordings, 13 speakers) in the seedTTS-eval schema:
+    # `prompt_text` is the text to synthesize (WER ground truth), `audio` is a
+    # same-speaker reference clip with transcript `target_text` (-> ref_text),
+    # plus `language` and `sample_idx`. SIM compares the generated clip against
+    # the reference clip.
     DatasetRegistry.register_alias(
         "voiceclone-eval",
         DatasetConfig(
             dataset_id="argmaxinc/voiceclone-eval",
             split="train",
-            column_mapping={"target_text": "text", "prompt_text": "ref_text"},
         ),
         supported_pipeline_types={
             PipelineType.SPEECH_GENERATION,
         },
         description=(
             "Voice-clone evaluation set (157 samples, 13 call-center speakers) built from "
-            "force_aligner_speech_regions in seedTTS-eval format — reference clip + ICL transcript "
-            "+ same-speaker target text for voice-clone speech generation evaluation (WER + SIM)."
+            "force_aligner_speech_regions in seedTTS-eval format — reference clip + transcript "
+            "+ same-speaker synthesis text for voice-clone speech generation evaluation (WER + SIM)."
         ),
     )
 
@@ -632,7 +646,6 @@ def register_dataset_aliases() -> None:
             dataset_id="argmaxinc/voiceclone-eval",
             split="train",
             num_samples=3,
-            column_mapping={"target_text": "text", "prompt_text": "ref_text"},
         ),
         supported_pipeline_types={
             PipelineType.SPEECH_GENERATION,

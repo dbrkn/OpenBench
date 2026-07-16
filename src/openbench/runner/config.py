@@ -27,6 +27,24 @@ class BenchmarkConfig(BaseModel):
         ..., description="The metrics that will be used for each task"
     )
     datasets: dict[str, DatasetConfig] = Field(..., description="Datasets to evaluate")
+    hf_results_repo: str | None = Field(
+        None,
+        description=(
+            "If set, per-sample speech-generation results (audio + SIM/WER) are pushed "
+            "incrementally to this Hugging Face dataset repo as append-only parquet shards."
+        ),
+    )
+    hf_results_flush_every: int = Field(
+        100, description="Flush buffered per-sample results to the HF repo every N samples."
+    )
+    continue_on_sample_error: bool = Field(
+        True,
+        description=(
+            "If True (default), a sample that fails during processing is logged and skipped so the "
+            "rest of the dataset still runs; metrics are computed over the successful samples. "
+            "Set False to abort the whole run on the first sample failure (sequential mode only)."
+        ),
+    )
 
     class Config:
         arbitrary_types_allowed = True

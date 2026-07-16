@@ -145,10 +145,12 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         description="--code-decoder-backend. Defaults to 'mlx'; set 'coreml' for the CoreML asset, or None for the CLI default.",
     )
     voice_clone_backend: Literal["coreml", "mlx"] | None = Field(
-        default="mlx",
+        default=None,
         description=(
-            "--voice-clone-backend. Defaults to 'mlx' (variable-length encoders via mlx-audio). "
-            "Set 'coreml' for the fixed-window CoreML SpeakerEncoder/SpeechEncoder assets."
+            "--voice-clone-backend. None (default) omits the flag for tts-cli builds that "
+            "don't support it (e.g. rd-689). Set 'mlx' for variable-length encoders via "
+            "mlx-audio (refclone study), or 'coreml' for the fixed-window CoreML "
+            "SpeakerEncoder/SpeechEncoder assets."
         ),
     )
     mlx_voice_clone_repo_id: str | None = Field(
@@ -156,6 +158,16 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         description=(
             "--mlx-voice-clone-repo-id. Only used when voice_clone_backend=mlx. "
             "None lets tts-cli use its Base-family default."
+        ),
+    )
+    mlx_max_sequence_length: int | None = Field(
+        default=256,
+        description=(
+            "--mlx-max-sequence-length. Caps the MLX talker's generation length. Defaults to 256 to "
+            "match the CoreML SpeechDecoder's kv_len_256 cache; without this cap the talker may emit "
+            "up to 512 frames and overflow the decoder (IndexError). Only applied when "
+            "code_decoder_backend='mlx'; None uses the CLI default. The refclone study "
+            "used 8192 so long ICL prefixes fit."
         ),
     )
     speaker_encoder_variant: str | None = Field(
@@ -179,38 +191,35 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
             "voice_clone_backend=coreml (or unset). Example: W16A16-10s."
         ),
     )
-    # Refclone-study alignment (Option B): pass through to tts-cli.
+    # Refclone-study alignment: opt-in pass-throughs to tts-cli. All default to
+    # "omit the flag" so tts-cli builds without them (e.g. rd-689) keep working;
+    # the refclone study sets no_chunk=true max_new_tokens=2500
+    # mlx_repo_id=mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16
+    # mlx_max_sequence_length=8192 streaming=true via --pipeline-config.
     no_chunk: bool = Field(
-        default=True,
+        default=False,
         description=(
             "--no-chunk. Synthesize the full sample text in one ICL call "
-            "(disables tts-cli's 35-word TextChunker). Default True so long "
-            "voice-clone targets are not truncated mid-script."
+            "(disables tts-cli's 35-word TextChunker) so long voice-clone "
+            "targets are not truncated mid-script. Refclone uses True."
         ),
     )
     max_new_tokens: int | None = Field(
-        default=2500,
+        default=None,
         description=(
-            "--max-new-tokens (RVQ frames, ~12/s). Refclone uses 2500; set null "
-            "to leave the tts-cli / library default (no explicit cap)."
+            "--max-new-tokens (RVQ frames, ~12/s). Refclone uses 2500; None "
+            "leaves the tts-cli / library default (no explicit cap)."
         ),
     )
     mlx_repo_id: str | None = Field(
-        default="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16",
+        default=None,
         description=(
-            "--mlx-repo-id. Only used with code_decoder_backend=mlx. Defaults to "
+            "--mlx-repo-id. Only used with code_decoder_backend=mlx. Refclone uses "
             "the Base-bf16 talker to match voice_clone version_dir=12hz-0.6b-base."
         ),
     )
-    mlx_max_sequence_length: int | None = Field(
-        default=8192,
-        description=(
-            "--mlx-max-sequence-length. KV / max sequence length for the MLX "
-            "talker. Refclone used 8192 so long ICL prefixes fit."
-        ),
-    )
     streaming: bool = Field(
-        default=True,
+        default=False,
         description=(
             "--streaming. Passed for CLI compatibility with the refclone study; "
             "current tts-cli ICL is non-streaming (full text in prefix)."
@@ -271,7 +280,8 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
             args.extend(["--code-decoder-backend", self.code_decoder_backend])
         if self.mlx_repo_id is not None:
             args.extend(["--mlx-repo-id", self.mlx_repo_id])
-        if self.mlx_max_sequence_length is not None:
+        # Cap the MLX talker so it can't out-generate the CoreML SpeechDecoder's kv cache.
+        if self.code_decoder_backend == "mlx" and self.mlx_max_sequence_length is not None:
             args.extend(["--mlx-max-sequence-length", str(self.mlx_max_sequence_length)])
         if self.no_chunk:
             args.append("--no-chunk")

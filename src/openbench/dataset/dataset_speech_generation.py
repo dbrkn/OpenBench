@@ -14,8 +14,9 @@ class SpeechGenerationExtraInfo(TypedDict, total=False):
     """Extra info for speech generation samples.
 
     For voice-cloning datasets (e.g. seedTTS), `ref_audio` points at the
-    speaker prompt clip and `ref_text` is its transcript. The prototype
-    pipeline consumes these to drive `tts-cli --mode voice_clone`.
+    target-speaker prompt clip and `ref_text` is its transcript. The prototype
+    pipeline consumes these to drive `tts-cli --mode voice_clone`. `sample_idx`
+    carries the dataset's stable per-sample id (e.g. the source file name).
 
     SIM compares the generated clip against `sim_audio` when set (refclone /
     reference-length study: fixed REAL target wav). Otherwise it falls back to
@@ -26,15 +27,23 @@ class SpeechGenerationExtraInfo(TypedDict, total=False):
     ref_audio: str
     ref_text: str
     sim_audio: str
+    sample_idx: str
 
 
-class SpeechGenerationRow(TypedDict):
+class SpeechGenerationRow(TypedDict, total=False):
     """Expected row structure for speech generation.
 
-    Requires 'text' (the prompt string). No audio needed.
+    The text to synthesize (also the WER ground truth) comes from `prompt_text`
+    (voice-clone datasets) or, for plain TTS datasets, the legacy `text` column.
+    For voice cloning, `target_text` is the transcript of the reference clip
+    (`audio`), used as `--ref-text`.
     """
 
+    prompt_text: str
     text: str
+    target_text: str
+    language: str
+    sample_idx: str
 
 
 class SpeechGenerationSample(BaseSample[Transcript, SpeechGenerationExtraInfo]):
@@ -66,7 +75,9 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
     pipeline output, not this input audio.
     """
 
-    _expected_columns = ["text"]
+    # No hard-required column: the synthesis text may be `prompt_text` (voice-clone
+    # datasets) or the legacy `text` (plain TTS datasets); validated in prepare_sample.
+    _expected_columns: list[str] = []
     _sample_class = SpeechGenerationSample
 
     @staticmethod
@@ -92,30 +103,44 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
         return audio_name, dummy_waveform, dummy_sample_rate
 
     def prepare_sample(self, row: SpeechGenerationRow) -> tuple[Transcript, SpeechGenerationExtraInfo]:
-        """Build the reference transcript from the prompt text.
+        """Build the synthesis reference transcript and the per-sample extra info.
+
+        The reference `Transcript` is the text to synthesize and the WER ground
+        truth: it comes from `prompt_text` (voice-clone datasets) or the legacy
+        `text` column.
 
         Voice-clone fields:
-        * ``ref_text`` / ``ref_audio`` — ICL prompt (may differ from ``text``).
+        * ``ref_text`` — transcript of the reference clip. An explicit
+          ``ref_text`` column wins (refclone); otherwise voice-clone datasets
+          provide it as ``target_text``; plain datasets with a reference clip
+          reuse the synthesis text.
+        * ``ref_audio`` — optional explicit path to the ICL prompt clip.
         * ``sim_audio`` — optional SIM yardstick path (refclone: real target wav).
-        When only ``audio`` is present (seedTTS), ``ref_text`` defaults to ``text``.
         """
-        text = row["text"]
-        words = text.split()
-        reference = Transcript.from_words_info(
-            words=words,
-        )
+        synth_text = row.get("prompt_text")
+        if synth_text is None:
+            synth_text = row.get("text")
+        if synth_text is None:
+            raise ValueError(
+                "Speech-generation dataset row must provide a 'prompt_text' (or legacy 'text') column "
+                "with the text to synthesize."
+            )
+        reference = Transcript.from_words_info(words=synth_text.split())
 
         extra_info: SpeechGenerationExtraInfo = {}
-        if "language" in row and row["language"]:
+        if row.get("language") is not None:
             extra_info["language"] = row["language"]
-
-        # Explicit ICL ref transcript (refclone: prompt ≠ target text).
-        ref_text = row.get("ref_text")  # type: ignore[attr-defined]
+        # Stable per-sample id (e.g. source file name) for downstream result rows.
+        if row.get("sample_idx") is not None:
+            extra_info["sample_idx"] = str(row["sample_idx"])
+        # Explicit ICL ref transcript (refclone: local datasets ship a ref_text column).
+        ref_text = row.get("ref_text")
         if isinstance(ref_text, str) and ref_text.strip():
             extra_info["ref_text"] = ref_text.strip()
         elif self._has_reference_audio(row):
-            # seedTTS-style: the audio column is the clone prompt, same text.
-            extra_info["ref_text"] = text
+            # Voice-clone schema: the reference clip's transcript is `target_text`;
+            # plain datasets with a reference clip reuse the synthesis text.
+            extra_info["ref_text"] = row.get("target_text") or synth_text
 
         ref_audio = row.get("ref_audio")  # type: ignore[attr-defined]
         if isinstance(ref_audio, str) and ref_audio.strip():
