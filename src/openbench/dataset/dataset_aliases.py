@@ -4,6 +4,7 @@
 """Dataset alias registrations for the CLI."""
 
 import os
+from pathlib import Path
 
 from ..types import PipelineType
 from .dataset_base import DatasetConfig
@@ -584,7 +585,7 @@ def register_dataset_aliases() -> None:
         description="Seed-TTS evaluation set (1088 samples) — reference clip + transcript + language for voice-clone speech generation evaluation (WER + SIM).",
     )
 
-    # Smoke-test subset of seedtts-eval: same dataset, capped to the first 3
+    # Seed-TTS smoke-test subset of seedtts-eval: same dataset, capped to the first 3
     # samples for quick pipeline validation before a full 1088-sample run.
     DatasetRegistry.register_alias(
         "seedtts-eval-mini",
@@ -597,6 +598,29 @@ def register_dataset_aliases() -> None:
             PipelineType.SPEECH_GENERATION,
         },
         description="Seed-TTS smoke-test subset (first 3 samples) for quick pipeline validation.",
+    )
+
+    # Refclone / reference-length study: built locally from
+    # argmaxinc/force_aligner_speech_regions via scripts/refclone/build_dataset.py.
+    # Each row: target text + real target audio (SIM) + variable-length ref_audio/ref_text (ICL).
+    _refclone_path = os.getenv(
+        "REFCLONE_DATASET_PATH",
+        str(Path(__file__).resolve().parents[3] / "outputs" / "refclone_openbench" / "hf_dataset"),
+    )
+    DatasetRegistry.register_alias(
+        "refclone-speech-regions",
+        DatasetConfig(dataset_id=_refclone_path, split="train"),
+        supported_pipeline_types={PipelineType.SPEECH_GENERATION},
+        description=(
+            "Reference-length voice-clone study set built from force_aligner_speech_regions. "
+            "Run scripts/refclone/build_dataset.py first (or set REFCLONE_DATASET_PATH)."
+        ),
+    )
+    DatasetRegistry.register_alias(
+        "refclone-speech-regions-mini",
+        DatasetConfig(dataset_id=_refclone_path, split="train", num_samples=2),
+        supported_pipeline_types={PipelineType.SPEECH_GENERATION},
+        description="Smoke-test subset (first 2 reference lengths) of refclone-speech-regions.",
     )
 
     ########## STREAMING TRANSCRIPTION ##########

@@ -14,14 +14,18 @@ class SpeechGenerationExtraInfo(TypedDict, total=False):
     """Extra info for speech generation samples.
 
     For voice-cloning datasets (e.g. seedTTS), `ref_audio` points at the
-    target-speaker prompt clip and `ref_text` is its transcript. The prototype
-    pipeline consumes these to drive `tts-cli --mode voice_clone`, and the SIM
-    metric compares the generated clip against `ref_audio`.
+    speaker prompt clip and `ref_text` is its transcript. The prototype
+    pipeline consumes these to drive `tts-cli --mode voice_clone`.
+
+    SIM compares the generated clip against `sim_audio` when set (refclone /
+    reference-length study: fixed REAL target wav). Otherwise it falls back to
+    `ref_audio` / the sample waveform (seedTTS-style reconstruction).
     """
 
     language: str
     ref_audio: str
     ref_text: str
+    sim_audio: str
 
 
 class SpeechGenerationRow(TypedDict):
@@ -72,14 +76,14 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
 
     def _extract_audio_info(self, row: dict) -> tuple[str, np.ndarray, int]:
         """Load a reference clip if present, else a placeholder waveform."""
+        # Prefer an explicit id (refclone uses L{tag}); fall back to audio path stem.
         audio_name = f"sample_{row['idx']}"
-        # Use audio_name from the row if available
         if "audio_name" in row and row["audio_name"]:
             audio_name = str(row["audio_name"])
 
         if self._has_reference_audio(row):
             audio = row["audio"]
-            if audio.get("path"):
+            if not ("audio_name" in row and row["audio_name"]) and audio.get("path"):
                 audio_name = Path(audio["path"]).stem
             return audio_name, np.asarray(audio["array"], dtype=np.float32), int(audio["sampling_rate"])
 
@@ -88,7 +92,13 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
         return audio_name, dummy_waveform, dummy_sample_rate
 
     def prepare_sample(self, row: SpeechGenerationRow) -> tuple[Transcript, SpeechGenerationExtraInfo]:
-        """Build the reference transcript from the prompt text."""
+        """Build the reference transcript from the prompt text.
+
+        Voice-clone fields:
+        * ``ref_text`` / ``ref_audio`` — ICL prompt (may differ from ``text``).
+        * ``sim_audio`` — optional SIM yardstick path (refclone: real target wav).
+        When only ``audio`` is present (seedTTS), ``ref_text`` defaults to ``text``.
+        """
         text = row["text"]
         words = text.split()
         reference = Transcript.from_words_info(
@@ -96,11 +106,23 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
         )
 
         extra_info: SpeechGenerationExtraInfo = {}
-        if "language" in row:
+        if "language" in row and row["language"]:
             extra_info["language"] = row["language"]
-        # When the dataset ships a reference clip, its transcript doubles as the
-        # voice-clone `ref_text` (the pipeline materializes the clip as ref_audio).
-        if self._has_reference_audio(row):
+
+        # Explicit ICL ref transcript (refclone: prompt ≠ target text).
+        ref_text = row.get("ref_text")  # type: ignore[attr-defined]
+        if isinstance(ref_text, str) and ref_text.strip():
+            extra_info["ref_text"] = ref_text.strip()
+        elif self._has_reference_audio(row):
+            # seedTTS-style: the audio column is the clone prompt, same text.
             extra_info["ref_text"] = text
+
+        ref_audio = row.get("ref_audio")  # type: ignore[attr-defined]
+        if isinstance(ref_audio, str) and ref_audio.strip():
+            extra_info["ref_audio"] = ref_audio.strip()
+
+        sim_audio = row.get("sim_audio")  # type: ignore[attr-defined]
+        if isinstance(sim_audio, str) and sim_audio.strip():
+            extra_info["sim_audio"] = sim_audio.strip()
 
         return reference, extra_info

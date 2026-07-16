@@ -57,11 +57,31 @@ class DatasetConfig(BaseModel):
             return self._load_huggingface()
 
     def _load_local(self) -> HfDataset:
-        """Load dataset from local directory."""
-        from .local_dataset_loader import load_local_dataset
+        """Load dataset from local directory.
 
-        split = self.split or "test"  # Default split
-        ds = load_local_dataset(dataset_dir=Path(self.dataset_id), split=split)
+        Supports:
+        * HuggingFace ``save_to_disk`` datasets (``dataset_info.json`` /
+          ``state.json``, or a DatasetDict with split subdirs), and
+        * OpenBench's audio/reference/splits layout via ``local_dataset_loader``.
+        """
+        dataset_path = Path(self.dataset_id)
+        # HF datasets.save_to_disk layout (Dataset or DatasetDict).
+        if (dataset_path / "dataset_info.json").exists() or (dataset_path / "state.json").exists() or any(
+            (dataset_path / split_name / "dataset_info.json").exists() for split_name in ("train", "test", "validation")
+        ):
+            from datasets import DatasetDict, load_from_disk
+
+            loaded = load_from_disk(str(dataset_path))
+            if isinstance(loaded, DatasetDict):
+                split = self.split or next(iter(loaded.keys()))
+                ds = loaded[split]
+            else:
+                ds = loaded
+        else:
+            from .local_dataset_loader import load_local_dataset
+
+            split = self.split or "test"  # Default split
+            ds = load_local_dataset(dataset_dir=dataset_path, split=split)
 
         if self.num_samples is not None:
             ds = ds.take(self.num_samples)

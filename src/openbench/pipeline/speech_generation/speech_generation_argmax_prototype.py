@@ -48,8 +48,11 @@ TEMP_TTS_AUDIO_DIR = Path("./temp_tts_prototype_audio")
 # Generated clips live in their own subdir so they never collide with the
 # per-sample reference clips (which share the same base filename) and are kept
 # after the run. Reference clips go under `ref/` and are removed once scored.
+# SIM yardstick clips (refclone real target) go under `sim/` when materialized
+# from the sample waveform.
 GENERATED_AUDIO_DIR = TEMP_TTS_AUDIO_DIR / "generated"
 TEMP_REF_AUDIO_DIR = TEMP_TTS_AUDIO_DIR / "ref"
+TEMP_SIM_AUDIO_DIR = TEMP_TTS_AUDIO_DIR / "sim"
 
 # Voice-clone assets (SpeakerEncoder/SpeechEncoder etc.) ship under the "base"
 # model family, not the CLI's default "customvoice" variant. So when cloning we
@@ -141,17 +144,77 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         default="mlx",
         description="--code-decoder-backend. Defaults to 'mlx'; set 'coreml' for the CoreML asset, or None for the CLI default.",
     )
+    voice_clone_backend: Literal["coreml", "mlx"] | None = Field(
+        default="mlx",
+        description=(
+            "--voice-clone-backend. Defaults to 'mlx' (variable-length encoders via mlx-audio). "
+            "Set 'coreml' for the fixed-window CoreML SpeakerEncoder/SpeechEncoder assets."
+        ),
+    )
+    mlx_voice_clone_repo_id: str | None = Field(
+        default=None,
+        description=(
+            "--mlx-voice-clone-repo-id. Only used when voice_clone_backend=mlx. "
+            "None lets tts-cli use its Base-family default."
+        ),
+    )
     speaker_encoder_variant: str | None = Field(
-        default="W16A16-10s",
-        description="--speaker-encoder-variant (SpeakerEncoder voice-clone CoreML asset). Only used in voice_clone mode; None uses the CLI default.",
+        default=None,
+        description=(
+            "--speaker-encoder-variant (CoreML SpeakerEncoder). Only used when "
+            "voice_clone_backend=coreml (or unset). Example: W16A16-10s."
+        ),
     )
     speech_encoder_variant: str | None = Field(
-        default="W16A16-10s",
-        description="--speech-encoder-variant (SpeechEncoder voice-clone CoreML asset). Only used in ICL voice_clone mode; None uses the CLI default.",
+        default=None,
+        description=(
+            "--speech-encoder-variant (CoreML SpeechEncoder). Only used when "
+            "voice_clone_backend=coreml (or unset). Example: W16A16-10s."
+        ),
     )
     speech_encoder_rvq_variant: str | None = Field(
-        default="W16A16-10s",
-        description="--speech-encoder-rvq-variant (SpeechEncoderRVQ voice-clone CoreML asset). Only used in ICL voice_clone mode; None uses the CLI default.",
+        default=None,
+        description=(
+            "--speech-encoder-rvq-variant (CoreML SpeechEncoderRVQ). Only used when "
+            "voice_clone_backend=coreml (or unset). Example: W16A16-10s."
+        ),
+    )
+    # Refclone-study alignment (Option B): pass through to tts-cli.
+    no_chunk: bool = Field(
+        default=True,
+        description=(
+            "--no-chunk. Synthesize the full sample text in one ICL call "
+            "(disables tts-cli's 35-word TextChunker). Default True so long "
+            "voice-clone targets are not truncated mid-script."
+        ),
+    )
+    max_new_tokens: int | None = Field(
+        default=2500,
+        description=(
+            "--max-new-tokens (RVQ frames, ~12/s). Refclone uses 2500; set null "
+            "to leave the tts-cli / library default (no explicit cap)."
+        ),
+    )
+    mlx_repo_id: str | None = Field(
+        default="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16",
+        description=(
+            "--mlx-repo-id. Only used with code_decoder_backend=mlx. Defaults to "
+            "the Base-bf16 talker to match voice_clone version_dir=12hz-0.6b-base."
+        ),
+    )
+    mlx_max_sequence_length: int | None = Field(
+        default=8192,
+        description=(
+            "--mlx-max-sequence-length. KV / max sequence length for the MLX "
+            "talker. Refclone used 8192 so long ICL prefixes fit."
+        ),
+    )
+    streaming: bool = Field(
+        default=True,
+        description=(
+            "--streaming. Passed for CLI compatibility with the refclone study; "
+            "current tts-cli ICL is non-streaming (full text in prefix)."
+        ),
     )
 
     @model_validator(mode="after")
@@ -182,15 +245,22 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         if self.mode == TtsMode.VOICE_CLONE:
             if self.x_vector_only:
                 args.append("--x-vector-only")
-            # SpeakerEncoder is used for any voice_clone (x-vector or ICL).
-            if self.speaker_encoder_variant is not None:
-                args.extend(["--speaker-encoder-variant", self.speaker_encoder_variant])
-            # SpeechEncoder(+RVQ) assets are ICL-only (skipped with --x-vector-only).
-            if not self.x_vector_only:
-                if self.speech_encoder_variant is not None:
-                    args.extend(["--speech-encoder-variant", self.speech_encoder_variant])
-                if self.speech_encoder_rvq_variant is not None:
-                    args.extend(["--speech-encoder-rvq-variant", self.speech_encoder_rvq_variant])
+            if self.voice_clone_backend is not None:
+                args.extend(["--voice-clone-backend", self.voice_clone_backend])
+            if self.voice_clone_backend == "mlx":
+                if self.mlx_voice_clone_repo_id is not None:
+                    args.extend(["--mlx-voice-clone-repo-id", self.mlx_voice_clone_repo_id])
+            else:
+                # CoreML encoder variants only apply when not using MLX VC encoders.
+                if self.speaker_encoder_variant is not None:
+                    args.extend(["--speaker-encoder-variant", self.speaker_encoder_variant])
+                if not self.x_vector_only:
+                    if self.speech_encoder_variant is not None:
+                        args.extend(["--speech-encoder-variant", self.speech_encoder_variant])
+                    if self.speech_encoder_rvq_variant is not None:
+                        args.extend(
+                            ["--speech-encoder-rvq-variant", self.speech_encoder_rvq_variant]
+                        )
         if self.version_dir is not None:
             args.extend(["--version-dir", self.version_dir])
         if self.models_path is not None:
@@ -199,6 +269,16 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
             args.extend(["--instruction", self.instruction])
         if self.code_decoder_backend is not None:
             args.extend(["--code-decoder-backend", self.code_decoder_backend])
+        if self.mlx_repo_id is not None:
+            args.extend(["--mlx-repo-id", self.mlx_repo_id])
+        if self.mlx_max_sequence_length is not None:
+            args.extend(["--mlx-max-sequence-length", str(self.mlx_max_sequence_length)])
+        if self.no_chunk:
+            args.append("--no-chunk")
+        if self.max_new_tokens is not None:
+            args.extend(["--max-new-tokens", str(self.max_new_tokens)])
+        if self.streaming:
+            args.append("--streaming")
         return args
 
 
@@ -214,6 +294,13 @@ class PrototypeSpeechGenerationInput(BaseModel):
     ref_text: str | None = Field(
         default=None,
         description="Transcript of `ref_audio` (required for ICL voice_clone, i.e. not --x-vector-only).",
+    )
+    sim_audio: str | None = Field(
+        default=None,
+        description=(
+            "Path to the SIM yardstick clip. Refclone uses the REAL target wav here so SIM is "
+            "comparable across reference lengths; seedTTS leaves this unset and falls back to ref_audio."
+        ),
     )
 
 
@@ -270,10 +357,11 @@ class ArgmaxPrototypeSpeechGenerationPipeline(Pipeline):
                 )
                 duration = float(librosa.get_duration(path=str(output.audio_path)))
                 logger.debug("Generated TTS audio: %s (%.2fs)", output.audio_path, duration)
+                # SIM yardstick: prefer explicit sim_audio (real target); else clone prompt.
                 return GeneratedAudio(
                     audio_path=str(output.audio_path),
                     duration=duration,
-                    reference_audio_path=inp.ref_audio,
+                    reference_audio_path=inp.sim_audio or inp.ref_audio,
                 )
             except Exception:
                 # Clean up partial outputs so the temp dir doesn't grow across retries.
@@ -286,17 +374,26 @@ class ArgmaxPrototypeSpeechGenerationPipeline(Pipeline):
     def parse_input(self, input_sample: SpeechGenerationSample) -> PrototypeSpeechGenerationInput:
         extra_info = input_sample.extra_info or {}
         ref_audio = extra_info.get("ref_audio")
+        sim_audio = extra_info.get("sim_audio")
         # If the dataset ships the reference clip as the sample waveform (rather
         # than a path), materialize it to a temp WAV so `tts-cli --ref-audio` and
         # the SIM metric can consume it. This is independent of TTS mode: the SIM
         # metric compares against this clip even in custom_voice mode (it is the
         # dataset's ground-truth target speaker). A length-1 waveform is the
         # placeholder used by prompt-only datasets, so skip it.
-        if (
-            not ref_audio
-            and input_sample.waveform is not None
-            and len(input_sample.waveform) > 1
-        ):
+        #
+        # Refclone rows also carry an explicit `ref_audio` path (clone prompt) while
+        # the sample waveform is the REAL target — then materialize the waveform as
+        # `sim_audio` (SIM yardstick) and keep `ref_audio` for cloning.
+        has_waveform = (
+            input_sample.waveform is not None and len(input_sample.waveform) > 1
+        )
+        if has_waveform and ref_audio and not sim_audio:
+            TEMP_SIM_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            sim_path = TEMP_SIM_AUDIO_DIR / f"{input_sample.audio_name}.wav"
+            sf.write(str(sim_path), input_sample.waveform, input_sample.sample_rate)
+            sim_audio = str(sim_path)
+        elif has_waveform and not ref_audio:
             TEMP_REF_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             ref_path = TEMP_REF_AUDIO_DIR / f"{input_sample.audio_name}.wav"
             sf.write(str(ref_path), input_sample.waveform, input_sample.sample_rate)
@@ -306,6 +403,7 @@ class ArgmaxPrototypeSpeechGenerationPipeline(Pipeline):
             audio_name=input_sample.audio_name,
             ref_audio=ref_audio,
             ref_text=extra_info.get("ref_text"),
+            sim_audio=sim_audio,
         )
 
     def parse_output(self, output: GeneratedAudio) -> PipelineOutput[GeneratedAudio]:
@@ -333,13 +431,20 @@ class ArgmaxPrototypeSpeechGenerationPipeline(Pipeline):
         except OSError as e:
             logger.warning("Could not remove frames file for %s: %s", pred.audio_path, e)
 
-        # 2) The reference clip we materialized for this sample.
-        ref_path = getattr(pred, "reference_audio_path", None)
-        if not ref_path:
-            return
-        ref = Path(ref_path)
-        try:
-            if ref.resolve().is_relative_to(TEMP_REF_AUDIO_DIR.resolve()):
-                ref.unlink(missing_ok=True)
-        except OSError as e:
-            logger.warning("Could not remove reference clip %s: %s", ref, e)
+        # 2) The reference / SIM clips we materialized for this sample.
+        for path_str in (
+            getattr(pred, "reference_audio_path", None),
+            # Clone prompts may still sit under TEMP_REF_AUDIO_DIR even when SIM
+            # uses a different yardstick path on the prediction.
+        ):
+            if not path_str:
+                continue
+            ref = Path(path_str)
+            try:
+                resolved = ref.resolve()
+                if resolved.is_relative_to(TEMP_REF_AUDIO_DIR.resolve()) or resolved.is_relative_to(
+                    TEMP_SIM_AUDIO_DIR.resolve()
+                ):
+                    ref.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning("Could not remove temp clip %s: %s", ref, e)

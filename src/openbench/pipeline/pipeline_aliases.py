@@ -771,18 +771,18 @@ def register_pipeline_aliases() -> None:
         "argmax-speech-generation-prototype",
         ArgmaxPrototypeSpeechGenerationPipeline,
         # Only `out_dir` is alias-specific; everything else (mode=voice_clone,
-        # language=ENGLISH, version_dir→base for cloning, code_decoder_backend=mlx)
-        # comes from ArgmaxPrototypeSpeechGenerationConfig defaults and stays
-        # overridable via a config override.
+        # language=ENGLISH, version_dir→base, code_decoder_backend=mlx,
+        # voice_clone_backend=mlx) comes from ArgmaxPrototypeSpeechGenerationConfig
+        # defaults and stays overridable via a config override.
         default_config={
             "out_dir": "./speech_generation_prototype_results",
         },
         description=(
             "ArgmaxPrototypes speech-generation pipeline. Synthesizes audio from text prompts via the "
-            "voice-cloning-capable `tts-cli` (from the `argmax_prototypes` dependency). Defaults to "
-            "`voice_clone` mode, cloning each sample's `ref_audio` (with `ref_text` for ICL). Supports "
-            "both WER (transcribe-and-compare) and SIM (speaker similarity vs the reference clip). "
-            "Requires the `tts-cli` executable on PATH (or set `cli_path`)."
+            "voice-cloning-capable `tts-cli`. Defaults to `voice_clone` with MLX for both the talker "
+            "(`code_decoder_backend=mlx`) and variable-length clone encoders (`voice_clone_backend=mlx`). "
+            "Supports WER and SIM. Requires a `tts-cli` that supports `--voice-clone-backend` "
+            "(e.g. ArgmaxPrototypes mlx-voice-clone) on PATH or via `cli_path`."
         ),
     )
 
