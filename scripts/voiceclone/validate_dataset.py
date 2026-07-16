@@ -36,7 +36,7 @@ def main() -> int:
 
     speakers: Counter[str] = Counter()
     lines = [
-        "| sample | speaker | ref dur (s) | ref words | target words |",
+        "| sample | speaker | ref dur (s) | ref words | synth words |",
         "|---|---|---|---|---|",
     ]
     for i in range(n):
