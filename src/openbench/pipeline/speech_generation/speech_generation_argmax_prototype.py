@@ -161,13 +161,14 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         ),
     )
     mlx_max_sequence_length: int | None = Field(
-        default=256,
+        default=None,
         description=(
-            "--mlx-max-sequence-length. Caps the MLX talker's generation length. Defaults to 256 to "
-            "match the CoreML SpeechDecoder's kv_len_256 cache; without this cap the talker may emit "
-            "up to 512 frames and overflow the decoder (IndexError). Only applied when "
-            "code_decoder_backend='mlx'; None uses the CLI default. The refclone study "
-            "used 8192 so long ICL prefixes fit."
+            "--mlx-max-sequence-length. KV budget for the MLX talker (ICL reference prefix "
+            "+ text + generated frames, ~12.5 frames/s). None (default) defers to the "
+            "tts-cli branch's own default (512 on berkin/mlx-voice-clone). Set 256 to "
+            "reinstate the rd-689-era cap matching the CoreML SpeechDecoder's kv_len_256 "
+            "cache (prevents an IndexError overflow there); the refclone study used 8192 "
+            "for very long ICL references. Only applied when code_decoder_backend='mlx'."
         ),
     )
     speaker_encoder_variant: str | None = Field(
