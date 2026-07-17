@@ -4,6 +4,7 @@
 """Speech-generation pipeline via Argmax SDK open-source `argmax-cli tts`."""
 
 from enum import StrEnum
+import shutil
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -330,9 +331,28 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         result = subprocess.run(
             f"{build_cmd} --show-bin-path", cwd=ext_dir, stdout=subprocess.PIPE, shell=True, text=True, check=True
         )
-        cli = Path(result.stdout.strip()) / "ttskit-mlx-cli"
+        bin_dir = Path(result.stdout.strip())
+        cli = bin_dir / "ttskit-mlx-cli"
         if not cli.is_file():
             raise RuntimeError(f"ttskit-mlx-cli not found after build: {cli}")
+
+        # Command-line SwiftPM can't compile mlx-swift's Metal shaders (see the
+        # extension README): produce the Cmlx bundle via xcodebuild once and
+        # graft it next to the SwiftPM binary so the kernels load at runtime.
+        bundle = bin_dir / "mlx-swift_Cmlx.bundle"
+        if not bundle.exists():
+            logger.info("Grafting mlx-swift Metal bundle via xcodebuild (one-time per checkout)")
+            subprocess.run(
+                "xcodebuild build -scheme ttskit-mlx-cli -destination platform=macOS "
+                "-derivedDataPath .build/xcode -quiet",
+                cwd=ext_dir,
+                shell=True,
+                check=True,
+            )
+            built = ext_dir / ".build" / "xcode" / "Build" / "Products" / "Debug" / "mlx-swift_Cmlx.bundle"
+            if not built.exists():
+                raise RuntimeError(f"xcodebuild did not produce {built}")
+            shutil.copytree(built, bundle)
         return str(cli)
 
     def parse_input(self, input_sample: SpeechGenerationSample) -> SpeechGenerationInput:
