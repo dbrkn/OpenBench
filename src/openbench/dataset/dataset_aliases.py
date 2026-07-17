@@ -617,11 +617,12 @@ def register_dataset_aliases() -> None:
     )
 
     # Voice-clone eval set curated from argmaxinc/force_aligner_speech_regions
-    # (call-center recordings, 13 speakers) in the seedTTS-eval schema:
-    # `prompt_text` is the text to synthesize (WER ground truth), `audio` is a
-    # same-speaker reference clip with transcript `target_text` (-> ref_text),
-    # plus `language` and `sample_idx`. SIM compares the generated clip against
-    # the reference clip.
+    # (call-center recordings, 30 speakers) in the seedTTS-eval schema plus a SIM
+    # yardstick: `prompt_text` is the text to synthesize (WER ground truth),
+    # `audio` is a same-speaker reference clip with transcript `target_text`
+    # (-> ref_text), and `target_audio` is the held-out REAL recording of
+    # `prompt_text` (-> sim_audio) so SIM is NOT computed against the clip the
+    # model conditioned on.
     DatasetRegistry.register_alias(
         "voiceclone-eval",
         DatasetConfig(
@@ -632,14 +633,15 @@ def register_dataset_aliases() -> None:
             PipelineType.SPEECH_GENERATION,
         },
         description=(
-            "Voice-clone evaluation set (157 samples, 13 call-center speakers) built from "
+            "Voice-clone evaluation set (374 samples, 30 call-center speakers) built from "
             "force_aligner_speech_regions in seedTTS-eval format — reference clip + transcript "
-            "+ same-speaker synthesis text for voice-clone speech generation evaluation (WER + SIM)."
+            "+ same-speaker synthesis text + held-out real target audio as the SIM yardstick "
+            "for voice-clone speech generation evaluation (WER + SIM)."
         ),
     )
 
     # Smoke-test subset of voiceclone-eval: same dataset, capped to the first 3
-    # samples for quick pipeline validation before a full 157-sample run.
+    # samples for quick pipeline validation before a full 374-sample run.
     DatasetRegistry.register_alias(
         "voiceclone-eval-mini",
         DatasetConfig(

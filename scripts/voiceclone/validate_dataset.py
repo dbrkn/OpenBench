@@ -45,6 +45,9 @@ def main() -> int:
         assert sample.text.strip(), f"sample {i}: empty target text"
         assert ref_text.strip(), f"sample {i}: missing ref_text"
         assert sample.text != ref_text, f"sample {i}: target text equals ref_text"
+        # SIM yardstick: held-out real target recording, distinct from the reference clip.
+        sim_audio = sample.extra_info.get("sim_audio", "")
+        assert sim_audio and os.path.exists(sim_audio), f"sample {i}: missing sim_audio yardstick"
         assert sample.sample_rate == 16000, f"sample {i}: unexpected sample rate {sample.sample_rate}"
         duration = sample.get_audio_duration()
         assert duration > 1.0, f"sample {i}: reference clip too short ({duration:.2f}s)"

@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 from typing_extensions import TypedDict
 
 from ..pipeline_prediction import Transcript
@@ -141,6 +142,20 @@ class SpeechGenerationDataset(BaseDataset[SpeechGenerationSample]):
             # Voice-clone schema: the reference clip's transcript is `target_text`;
             # plain datasets with a reference clip reuse the synthesis text.
             extra_info["ref_text"] = row.get("target_text") or synth_text
+
+        # Embedded SIM yardstick (voiceclone-eval `target_audio`): a held-out REAL
+        # recording of the synthesis text. Materialize it to a temp WAV so SIM is
+        # not computed against the clip the model conditioned on (same-channel /
+        # ICL-continuation bias inflates that score). An explicit `sim_audio` path
+        # column (refclone local datasets) takes precedence below.
+        target_audio = row.get("target_audio")
+        if isinstance(target_audio, dict) and target_audio.get("array") is not None:
+            sim_dir = Path("./temp_dataset_sim_audio")
+            sim_dir.mkdir(parents=True, exist_ok=True)
+            sim_name = str(row.get("sample_idx") or f"sample_{row.get('idx', 'unknown')}")
+            sim_path = (sim_dir / f"{sim_name}.wav").resolve()
+            sf.write(str(sim_path), np.asarray(target_audio["array"], dtype=np.float32), int(target_audio["sampling_rate"]))
+            extra_info["sim_audio"] = str(sim_path)
 
         ref_audio = row.get("ref_audio")  # type: ignore[attr-defined]
         if isinstance(ref_audio, str) and ref_audio.strip():
