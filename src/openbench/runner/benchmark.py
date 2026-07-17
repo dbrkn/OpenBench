@@ -222,9 +222,12 @@ class BenchmarkRunner:
     def _build_speech_generation_row(self, sample, output, task_results, sample_id) -> dict | None:
         """Assemble one row for the speech-generation HF results sink.
 
-        Mirrors the seedTTS-eval columns (text/language/sample_idx/audio) and
-        adds reference_audio, generated_audio and per-sample SIM/WER. Audio is
-        carried as in-memory arrays so it embeds into the parquet shard.
+        Carries three audio columns so per-sample scores can be debugged by
+        listening: ``prompt_audio`` (the clone prompt, i.e. the sample
+        waveform), ``sim_reference_audio`` (the clip SIM actually compared
+        against — the held-out real target when the dataset ships one, else
+        the prompt), and ``generated_audio``. Audio is carried as in-memory
+        arrays so it embeds into the parquet shard.
         """
         import numpy as np
         import soundfile as sf
@@ -247,12 +250,26 @@ class BenchmarkRunner:
             logger.warning(f"Could not read generated audio for sample {sample_id}: {e}")
             return None
 
-        reference = {"array": np.asarray(sample.waveform, dtype=np.float32), "sampling_rate": int(sample.sample_rate)}
+        prompt = {"array": np.asarray(sample.waveform, dtype=np.float32), "sampling_rate": int(sample.sample_rate)}
+
+        # The clip the SIM metric compared the generation against (sim_audio /
+        # ref_audio, whichever the pipeline recorded on the prediction). None if
+        # the pipeline didn't record one or the file can't be read.
+        sim_reference = None
+        sim_reference_path = getattr(output.prediction, "reference_audio_path", None)
+        if sim_reference_path:
+            try:
+                sim_array, sim_sr = sf.read(sim_reference_path, dtype="float32")
+                sim_reference = {"array": sim_array, "sampling_rate": int(sim_sr)}
+            except Exception as e:  # noqa: BLE001 - keep the row, just drop the debug audio
+                logger.warning(f"Could not read SIM reference audio for sample {sample_id}: {e}")
+
         return {
             # Prefer the dataset's stable id (e.g. source file name) over the loop index.
             "sample_idx": str(sample.extra_info.get("sample_idx", sample_id)),
             "language": sample.extra_info.get("language") or "",
-            "reference_audio": reference,
+            "prompt_audio": prompt,
+            "sim_reference_audio": sim_reference,
             "generated_audio": {"array": gen_array, "sampling_rate": int(gen_sr)},
             # prompt_text / transcription / WER / SIM kept adjacent for analysis.
             "prompt_text": sample.text,

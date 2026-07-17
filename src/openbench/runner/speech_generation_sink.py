@@ -8,10 +8,11 @@ parquet shard to a Hugging Face dataset repo (``data/chunk-NNNNN.parquet``).
 Each flush only uploads a new file — existing shards are never rewritten — so
 results accumulate safely and the HF dataset viewer auto-concatenates them.
 
-The schema mirrors the source seedTTS-eval dataset (``text``, ``language``,
-``sample_idx``, ``audio``) and adds ``reference_audio``, ``generated_audio``
-(both playable Audio columns, embedded in the parquet) plus per-sample ``SIM``
-and ``WER``.
+Each row carries three playable Audio columns (embedded in the parquet) for
+listening-based debugging — ``prompt_audio`` (the clone prompt),
+``sim_reference_audio`` (the clip SIM compared the generation against), and
+``generated_audio`` — plus ``prompt_text``, the ASR ``transcription``, and
+per-sample ``SIM`` / ``WER``.
 """
 
 import re
@@ -76,7 +77,12 @@ class SpeechGenerationResultSink:
             {
                 "sample_idx": Value("string"),
                 "language": Value("string"),
-                "reference_audio": Audio(),
+                # Three audio columns for listening-based debugging: the clone
+                # prompt, the clip SIM compared against (held-out real target
+                # when the dataset ships one; None when the pipeline recorded
+                # none), and the generated clip.
+                "prompt_audio": Audio(),
+                "sim_reference_audio": Audio(),
                 "generated_audio": Audio(),
                 # Kept adjacent for easy analysis: synthesized text, its ASR
                 # transcription, and the two scores.
