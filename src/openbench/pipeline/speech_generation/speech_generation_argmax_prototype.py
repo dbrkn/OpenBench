@@ -144,6 +144,15 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
         default="mlx",
         description="--code-decoder-backend. Defaults to 'mlx'; set 'coreml' for the CoreML asset, or None for the CLI default.",
     )
+    speech_decoder_backend: Literal["coreml", "mlx"] | None = Field(
+        default=None,
+        description=(
+            "--speech-decoder-backend. None (default) omits the flag for tts-cli builds "
+            "that don't support it. 'mlx' decodes RVQ codes through mlx-audio's Mimi "
+            "vocoder (whole sequences, no per-step seams — the CoreML stepping asset "
+            "clicks at every 4-frame boundary); 'coreml' forces the stepping asset."
+        ),
+    )
     voice_clone_backend: Literal["coreml", "mlx"] | None = Field(
         default=None,
         description=(
@@ -279,6 +288,8 @@ class ArgmaxPrototypeSpeechGenerationConfig(PipelineConfig):
             args.extend(["--instruction", self.instruction])
         if self.code_decoder_backend is not None:
             args.extend(["--code-decoder-backend", self.code_decoder_backend])
+        if self.speech_decoder_backend is not None:
+            args.extend(["--speech-decoder-backend", self.speech_decoder_backend])
         if self.mlx_repo_id is not None:
             args.extend(["--mlx-repo-id", self.mlx_repo_id])
         # Cap the MLX talker so it can't out-generate the CoreML SpeechDecoder's kv cache.
