@@ -134,6 +134,9 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
         default=None,
         description="--speech-decoder-mode (latencyOptimized | throughputOptimized | singleFunction).",
     )
+    speaker_encoder_variant: str | None = Field(default=None, description="--speaker-encoder-variant.")
+    speech_encoder_variant: str | None = Field(default=None, description="--speech-encoder-variant.")
+    speech_encoder_rvq_variant: str | None = Field(default=None, description="--speech-encoder-rvq-variant.")
 
     def generate_tts_cli_args(self) -> list[str]:
         args: list[str] = [
@@ -172,6 +175,9 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
             ("--text-projector-variant", self.text_projector_variant),
             ("--speech-decoder-variant", self.speech_decoder_variant),
             ("--speech-decoder-mode", self.speech_decoder_mode),
+            ("--speaker-encoder-variant", self.speaker_encoder_variant),
+            ("--speech-encoder-variant", self.speech_encoder_variant),
+            ("--speech-encoder-rvq-variant", self.speech_encoder_rvq_variant),
         ]:
             if value is not None:
                 args.extend([flag, value])
