@@ -181,6 +181,7 @@ def run_alias_mode(
     verbose: bool,
     hf_results_repo: str | None = None,
     hf_results_flush_every: int = 100,
+    metric_config: list[str] | None = None,
 ) -> BenchmarkResult:
     """Run evaluation using pipeline and dataset aliases."""
     try:
@@ -233,10 +234,32 @@ def run_alias_mode(
             is_active=use_wandb,
         )
 
+        # Metric constructor kwargs (`-mc metric.key=value`), e.g. the SIM
+        # speaker-encoder checkpoint. Values stay strings; metric __init__
+        # signatures accept them directly or coerce as needed.
+        metric_kwargs: dict[MetricOptions, dict[str, Any]] = {metric: {} for metric in metrics}
+        for item in metric_config or []:
+            key, sep, value = item.partition("=")
+            metric_name, dot, field = key.partition(".")
+            if not sep or not dot or not field or not value:
+                raise typer.BadParameter(f"Expected metric.key=value, got {item!r}", param_hint="--metric-config")
+            try:
+                metric_option = MetricOptions(metric_name)
+            except ValueError:
+                raise typer.BadParameter(f"Unknown metric {metric_name!r} in {item!r}", param_hint="--metric-config")
+            if metric_option not in metric_kwargs:
+                raise typer.BadParameter(
+                    f"Metric {metric_name!r} is not among --metrics {[m.value for m in metrics]}",
+                    param_hint="--metric-config",
+                )
+            metric_kwargs[metric_option][field] = value
+            if verbose:
+                typer.echo(f"Metric config override: {metric_name}.{field}={value}")
+
         benchmark_config = BenchmarkConfig(
             wandb_config=wandb_config,
             datasets={dataset_name: dataset_config},
-            metrics={metric: {} for metric in metrics},
+            metrics=metric_kwargs,
             hf_results_repo=hf_results_repo,
             hf_results_flush_every=hf_results_flush_every,
         )
@@ -372,6 +395,17 @@ def evaluate(
             "`-pc force_language=true`."
         ),
     ),
+    metric_config: list[str] | None = typer.Option(
+        None,
+        "--metric-config",
+        "-mc",
+        help=(
+            "Pass one or more metric constructor kwargs as metric.key=value pairs "
+            "(alias mode only). Repeat the flag for multiple overrides. Example: "
+            "`-mc sim.checkpoint=/path/to/wavlm_large_finetune.pth` "
+            "(the SIM metric also accepts hf://owner/repo/filename)."
+        ),
+    ),
     hf_results_repo: str | None = typer.Option(
         None,
         "--hf-results-repo",
@@ -450,6 +484,7 @@ def evaluate(
                 pipeline_config=pipeline_config,
                 hf_results_repo=hf_results_repo,
                 hf_results_flush_every=hf_results_flush_every,
+                metric_config=metric_config,
                 verbose=verbose,
             )
         display_result(result)

@@ -48,10 +48,15 @@ from pyannote.metrics.base import BaseMetric  # noqa: E402
 from pyannote.metrics.types import Details, MetricComponents  # noqa: E402
 from torchaudio.transforms import Resample  # noqa: E402
 
+from argmaxtools.utils import get_logger  # noqa: E402
+
 from ...types import PipelineType  # noqa: E402
 from ..metric import MetricOptions  # noqa: E402
 from ..registry import MetricRegistry  # noqa: E402
 from .ecapa_tdnn import ECAPA_TDNN_SMALL  # noqa: E402
+
+
+logger = get_logger(__name__)
 
 
 # Mapping from supported model name to the embedding feature dimension expected
@@ -136,6 +141,24 @@ class SpeakerSimilarity(BaseMetric):
 
     # -- model / embedding helpers --------------------------------------------
 
+    def _resolve_checkpoint(self) -> str | None:
+        """Resolve the checkpoint spec to a local path.
+
+        Supports ``hf://{owner}/{repo}/{filename}`` (fetched via
+        ``huggingface_hub``, cache-aware — CI-friendly) in addition to a plain
+        local filesystem path.
+        """
+        if self.checkpoint is None:
+            return None
+        if self.checkpoint.startswith("hf://"):
+            from huggingface_hub import hf_hub_download
+
+            parts = self.checkpoint[len("hf://") :].split("/")
+            if len(parts) < 3:
+                raise ValueError(f"Expected hf://owner/repo/filename, got {self.checkpoint!r}")
+            return hf_hub_download("/".join(parts[:2]), "/".join(parts[2:]))
+        return self.checkpoint
+
     def _get_model(self):
         """Lazily build and cache the speaker-encoder model."""
         if self._model is not None:
@@ -146,9 +169,17 @@ class SpeakerSimilarity(BaseMetric):
             feat_type=_FEAT_TYPE[self.model_name],
             config_path=None,
         )
-        if self.checkpoint is not None:
-            state_dict = torch.load(self.checkpoint, map_location=lambda storage, loc: storage)
+        checkpoint_path = self._resolve_checkpoint()
+        if checkpoint_path is not None:
+            state_dict = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
             model.load_state_dict(state_dict["model"], strict=False)
+        else:
+            logger.warning(
+                "SIM is running WITHOUT the fine-tuned speaker-encoder checkpoint: the ECAPA head "
+                "is randomly initialised, so scores are non-discriminative (typically ~0.99 for any "
+                "pair) and NOT comparable to seed-tts-eval. Pass it via "
+                "`-mc sim.checkpoint=/path/to/wavlm_large_finetune.pth` (or hf://owner/repo/file)."
+            )
         if self.use_gpu:
             model = model.cuda(self.device)
         model.eval()
