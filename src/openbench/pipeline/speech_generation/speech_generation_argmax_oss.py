@@ -134,6 +134,15 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
         default=None,
         description="--speech-decoder-mode (latencyOptimized | throughputOptimized | singleFunction).",
     )
+    encoder_backend: Literal["coreml", "mlx"] = Field(
+        default="coreml",
+        description=(
+            "Voice-clone reference encoder. coreml: argmax-cli encodes in-process via --ref-audio "
+            "(fixed 10/15s windows). mlx: encode via the TTSKitMLX extension's ttskit-mlx-cli "
+            "(variable-length references), then drive argmax-cli with --voice-clone-prompt. "
+            "mlx requires the repo branch to contain Extensions/TTSKitMLX."
+        ),
+    )
     speaker_encoder_variant: str | None = Field(default=None, description="--speaker-encoder-variant.")
     speech_encoder_variant: str | None = Field(default=None, description="--speech-encoder-variant.")
     speech_encoder_rvq_variant: str | None = Field(default=None, description="--speech-encoder-rvq-variant.")
@@ -234,6 +243,11 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         suffix = f".{self.config.output_format}"
         mode = self.config.mode
         x_vector_only = self.config.x_vector_only
+        encoder_backend = self.config.encoder_backend
+
+        mlx_encode_cli: str | None = None
+        if mode == "voice_clone" and encoder_backend == "mlx":
+            mlx_encode_cli = self._build_mlx_encode_cli(engine)
 
         def generate(inp: SpeechGenerationInput) -> GeneratedAudio:
             sample_args = list(tts_args)
@@ -243,16 +257,34 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
                         f"voice_clone mode requires a reference clip, but sample {inp.audio_name!r} "
                         "has no `ref_audio` in its extra_info."
                     )
-                sample_args.extend(["--ref-audio", inp.ref_audio])
-                if x_vector_only:
-                    sample_args.append("--x-vector-only")
+                if not x_vector_only and not inp.ref_text:
+                    raise ValueError(
+                        f"ICL voice_clone requires `ref_text` for sample {inp.audio_name!r}; "
+                        "set `x_vector_only=true` to clone without it."
+                    )
+                if mlx_encode_cli is not None:
+                    # Two-step MLX path: variable-length encode to a prompt JSON,
+                    # then drive argmax-cli with the precomputed prompt.
+                    import subprocess
+
+                    TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+                    prompt_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}.prompt.json"
+                    encode_cmd = [mlx_encode_cli, "encode", "--ref-audio", inp.ref_audio, "--output", str(prompt_path)]
+                    if inp.ref_text:
+                        encode_cmd.extend(["--ref-text", inp.ref_text])
+                    if x_vector_only:
+                        encode_cmd.append("--x-vector-only")
+                    try:
+                        subprocess.run(encode_cmd, check=True, capture_output=True, text=True)
+                    except subprocess.CalledProcessError as e:
+                        raise RuntimeError(f"ttskit-mlx-cli encode failed: {e.stderr}") from e
+                    sample_args.extend(["--voice-clone-prompt", str(prompt_path)])
                 else:
-                    if not inp.ref_text:
-                        raise ValueError(
-                            f"ICL voice_clone requires `ref_text` for sample {inp.audio_name!r}; "
-                            "set `x_vector_only=true` to clone without it."
-                        )
-                    sample_args.extend(["--ref-text", inp.ref_text])
+                    sample_args.extend(["--ref-audio", inp.ref_audio])
+                    if x_vector_only:
+                        sample_args.append("--x-vector-only")
+                    else:
+                        sample_args.extend(["--ref-text", inp.ref_text])
 
             TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             audio_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}{suffix}"
@@ -275,6 +307,33 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
                 raise
 
         return generate
+
+    def _build_mlx_encode_cli(self, engine: ArgmaxOpenSourceEngine) -> str:
+        """Build `ttskit-mlx-cli` from the Extensions/TTSKitMLX package in the
+        same checkout argmax-cli was built from."""
+        import subprocess
+
+        repo_dir = Path(engine.cli_path).resolve()
+        # engine.cli_path = <repo>/.build/<triple>/release/argmax-cli
+        while repo_dir.name != ".build" and repo_dir.parent != repo_dir:
+            repo_dir = repo_dir.parent
+        repo_dir = repo_dir.parent
+        ext_dir = repo_dir / "Extensions" / "TTSKitMLX"
+        if not ext_dir.is_dir():
+            raise RuntimeError(
+                f"encoder_backend=mlx requires Extensions/TTSKitMLX in the argmax-oss checkout ({ext_dir} missing). "
+                "Use a repo/commit that carries the MLX extension (e.g. berkin/voice-clone-mlx)."
+            )
+        logger.info("Building ttskit-mlx-cli in %s", ext_dir)
+        build_cmd = "swift build -c release --product ttskit-mlx-cli"
+        subprocess.run(build_cmd, cwd=ext_dir, shell=True, check=True)
+        result = subprocess.run(
+            f"{build_cmd} --show-bin-path", cwd=ext_dir, stdout=subprocess.PIPE, shell=True, text=True, check=True
+        )
+        cli = Path(result.stdout.strip()) / "ttskit-mlx-cli"
+        if not cli.is_file():
+            raise RuntimeError(f"ttskit-mlx-cli not found after build: {cli}")
+        return str(cli)
 
     def parse_input(self, input_sample: SpeechGenerationSample) -> SpeechGenerationInput:
         import soundfile as sf
