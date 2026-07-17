@@ -51,6 +51,10 @@ class ArgmaxOpenSourceEngineConfig(BaseModel):
         default=None,
         description="If set, skip clone/build and use this argmax-cli binary.",
     )
+    repo_url: str | None = Field(
+        default=None,
+        description=f"Git repo to clone/build (e.g. a fork). Defaults to {ARGMAX_OSS_REPO_URL}.",
+    )
 
 
 class TranscriptionCliInput(BaseModel):
@@ -108,7 +112,7 @@ class ArgmaxOpenSourceEngine:
             return
 
         cache_root = resolve_argmax_oss_cache_dir(config.cache_dir)
-        cache_key = (str(cache_root), config.commit_hash)
+        cache_key = (str(cache_root), config.repo_url, config.commit_hash)
         cached_cli_path = _CLI_PATH_CACHE.get(cache_key)
         if cached_cli_path is not None:
             logger.info("Reusing cached Argmax OSS CLI at %s", cached_cli_path)
@@ -149,7 +153,7 @@ class ArgmaxOpenSourceEngine:
 
     def _clone_and_build_cli(self, cache_root: Path) -> str:
         cache_root.mkdir(parents=True, exist_ok=True)
-        repo_url_parts = ARGMAX_OSS_REPO_URL.rstrip("/").split("/")
+        repo_url_parts = (self.config.repo_url or ARGMAX_OSS_REPO_URL).rstrip("/").split("/")
         repo_name = repo_url_parts[-1]
         repo_owner = repo_url_parts[-2]
 

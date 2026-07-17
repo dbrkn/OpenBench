@@ -31,6 +31,10 @@ from ..base import (
 logger = get_logger(__name__)
 
 TEMP_TTS_AUDIO_DIR = Path("./temp_tts_audio")
+# Voice-clone reference clips (materialized from sample waveforms) and SIM
+# yardstick clips live in their own subdirs, mirroring the prototype pipeline.
+TEMP_REF_AUDIO_DIR = TEMP_TTS_AUDIO_DIR / "ref"
+TEMP_SIM_AUDIO_DIR = TEMP_TTS_AUDIO_DIR / "sim"
 
 
 class TtsSpeaker(StrEnum):
@@ -105,6 +109,31 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
     model_repo: str | None = Field(default=None, description="--model-repo (HF repo).")
     version_dir: str | None = Field(default=None, description="--version-dir (overrides --model preset).")
     tokenizer: str | None = Field(default=None, description="--tokenizer (HF repo or local path).")
+    repo_url: str | None = Field(
+        default=None,
+        description="Git repo to clone/build argmax-cli from (e.g. a fork carrying voice cloning).",
+    )
+    mode: Literal["custom_voice", "voice_clone"] = Field(
+        default="custom_voice",
+        description=(
+            "voice_clone conditions each sample on its reference clip (ref_audio/ref_text from "
+            "extra_info, passed as --ref-audio/--ref-text); custom_voice uses --speaker."
+        ),
+    )
+    x_vector_only: bool = Field(
+        default=False,
+        description="--x-vector-only. Clone with the speaker embedding only (no ICL); ref_text not required.",
+    )
+    code_decoder_variant: str | None = Field(default=None, description="--code-decoder-variant.")
+    multi_code_decoder_variant: str | None = Field(default=None, description="--multi-code-decoder-variant.")
+    code_embedder_variant: str | None = Field(default=None, description="--code-embedder-variant.")
+    multi_code_embedder_variant: str | None = Field(default=None, description="--multi-code-embedder-variant.")
+    text_projector_variant: str | None = Field(default=None, description="--text-projector-variant.")
+    speech_decoder_variant: str | None = Field(default=None, description="--speech-decoder-variant.")
+    speech_decoder_mode: str | None = Field(
+        default=None,
+        description="--speech-decoder-mode (latencyOptimized | throughputOptimized | singleFunction).",
+    )
 
     def generate_tts_cli_args(self) -> list[str]:
         args: list[str] = [
@@ -135,6 +164,17 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
             args.extend(["--version-dir", self.version_dir])
         if self.tokenizer is not None:
             args.extend(["--tokenizer", self.tokenizer])
+        for flag, value in [
+            ("--code-decoder-variant", self.code_decoder_variant),
+            ("--multi-code-decoder-variant", self.multi_code_decoder_variant),
+            ("--code-embedder-variant", self.code_embedder_variant),
+            ("--multi-code-embedder-variant", self.multi_code_embedder_variant),
+            ("--text-projector-variant", self.text_projector_variant),
+            ("--speech-decoder-variant", self.speech_decoder_variant),
+            ("--speech-decoder-mode", self.speech_decoder_mode),
+        ]:
+            if value is not None:
+                args.extend([flag, value])
         return args
 
 
@@ -143,6 +183,18 @@ class SpeechGenerationInput(BaseModel):
 
     text: str = Field(..., description="Text prompt to generate speech from.")
     audio_name: str = Field(..., description="Unique identifier for this sample (used for temp file naming).")
+    ref_audio: str | None = Field(
+        default=None,
+        description="Path to the reference-speaker clip to clone (required in voice_clone mode).",
+    )
+    ref_text: str | None = Field(
+        default=None,
+        description="Transcript of `ref_audio` (required for ICL voice_clone, i.e. not --x-vector-only).",
+    )
+    sim_audio: str | None = Field(
+        default=None,
+        description="SIM yardstick clip path (held-out real target); falls back to ref_audio when unset.",
+    )
 
 
 @register_pipeline
@@ -169,24 +221,47 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
                 cache_dir=self.config.cache_dir,
                 commit_hash=self.config.commit_hash,
                 cli_path=self.config.cli_path,
+                repo_url=self.config.repo_url,
             )
         )
         tts_args = self.config.generate_tts_cli_args()
         suffix = f".{self.config.output_format}"
+        mode = self.config.mode
+        x_vector_only = self.config.x_vector_only
 
         def generate(inp: SpeechGenerationInput) -> GeneratedAudio:
+            sample_args = list(tts_args)
+            if mode == "voice_clone":
+                if not inp.ref_audio:
+                    raise ValueError(
+                        f"voice_clone mode requires a reference clip, but sample {inp.audio_name!r} "
+                        "has no `ref_audio` in its extra_info."
+                    )
+                sample_args.extend(["--ref-audio", inp.ref_audio])
+                if x_vector_only:
+                    sample_args.append("--x-vector-only")
+                else:
+                    if not inp.ref_text:
+                        raise ValueError(
+                            f"ICL voice_clone requires `ref_text` for sample {inp.audio_name!r}; "
+                            "set `x_vector_only=true` to clone without it."
+                        )
+                    sample_args.extend(["--ref-text", inp.ref_text])
+
             TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             audio_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}{suffix}"
             try:
                 output: TtsCliOutput = engine.tts(
                     TtsCliInput(text=inp.text, output_path=audio_path),
-                    tts_args,
+                    sample_args,
                 )
                 duration = float(librosa.get_duration(path=str(output.audio_path)))
                 logger.debug("Generated TTS audio: %s (%.2fs)", output.audio_path, duration)
+                # SIM yardstick: prefer the explicit held-out target; else the clone prompt.
                 return GeneratedAudio(
                     audio_path=str(output.audio_path),
                     duration=duration,
+                    reference_audio_path=inp.sim_audio or inp.ref_audio,
                 )
             except Exception:
                 # Clean up partial output so the temp dir doesn't grow across retries.
@@ -196,9 +271,34 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         return generate
 
     def parse_input(self, input_sample: SpeechGenerationSample) -> SpeechGenerationInput:
+        import soundfile as sf
+
+        extra_info = input_sample.extra_info or {}
+        ref_audio = extra_info.get("ref_audio")
+        sim_audio = extra_info.get("sim_audio")
+        # Mirror the prototype pipeline: when the dataset ships the reference
+        # clip as the sample waveform, materialize it to a temp WAV for
+        # `--ref-audio` / the SIM metric. When an explicit ref_audio path exists
+        # (refclone-style datasets), the waveform is the REAL target instead and
+        # becomes the SIM yardstick.
+        has_waveform = input_sample.waveform is not None and len(input_sample.waveform) > 1
+        if has_waveform and ref_audio and not sim_audio:
+            TEMP_SIM_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            sim_path = TEMP_SIM_AUDIO_DIR / f"{input_sample.audio_name}.wav"
+            sf.write(str(sim_path), input_sample.waveform, input_sample.sample_rate)
+            sim_audio = str(sim_path)
+        elif has_waveform and not ref_audio:
+            TEMP_REF_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            ref_path = TEMP_REF_AUDIO_DIR / f"{input_sample.audio_name}.wav"
+            sf.write(str(ref_path), input_sample.waveform, input_sample.sample_rate)
+            ref_audio = str(ref_path)
+
         return SpeechGenerationInput(
             text=input_sample.reference.get_transcript_string(),
             audio_name=input_sample.audio_name,
+            ref_audio=ref_audio,
+            ref_text=extra_info.get("ref_text"),
+            sim_audio=sim_audio,
         )
 
     def parse_output(self, output: GeneratedAudio) -> PipelineOutput[GeneratedAudio]:
