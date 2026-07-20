@@ -135,6 +135,16 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
         default=None,
         description="--speech-decoder-mode (latencyOptimized | throughputOptimized | singleFunction).",
     )
+    talker_backend: Literal["coreml", "mlx"] = Field(
+        default="coreml",
+        description=(
+            "CodeDecoder (talker) backend. coreml (default): argmax-cli's CoreML talker. "
+            "mlx: drive generation through ttskit-mlx-cli (Extensions/TTSKitMLX) — the MLX "
+            "talker with batched ICL prefill and no KV cap; encoders/embedders/decoders stay "
+            "CoreML. Requires models_path (a local model dir; ttskit-mlx-cli does not download) "
+            "and encoder_backend=coreml."
+        ),
+    )
     encoder_backend: Literal["coreml", "mlx"] = Field(
         default="coreml",
         description=(
@@ -240,15 +250,30 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
                 repo_url=self.config.repo_url,
             )
         )
-        tts_args = self.config.generate_tts_cli_args()
         suffix = f".{self.config.output_format}"
         mode = self.config.mode
         x_vector_only = self.config.x_vector_only
         encoder_backend = self.config.encoder_backend
+        talker_backend = self.config.talker_backend
+
+        if talker_backend == "mlx":
+            # ttskit-mlx-cli runs the hybrid (CoreML encoders/embedders/decoders +
+            # MLX talker) in-process; it has its own flag surface and no Hub
+            # download, so a local models_path is mandatory.
+            if encoder_backend != "coreml":
+                raise ValueError("talker_backend=mlx requires encoder_backend=coreml (in-process CoreML encode).")
+            if mode != "voice_clone":
+                raise ValueError("talker_backend=mlx currently supports voice_clone mode only.")
+            if not self.config.models_path:
+                raise ValueError("talker_backend=mlx requires models_path (local CoreML model dir).")
+            engine.cli_path = self._build_mlx_cli(engine)
+            tts_args = self._generate_mlx_talker_args()
+        else:
+            tts_args = self.config.generate_tts_cli_args()
 
         mlx_encode_cli: str | None = None
         if mode == "voice_clone" and encoder_backend == "mlx":
-            mlx_encode_cli = self._build_mlx_encode_cli(engine)
+            mlx_encode_cli = self._build_mlx_cli(engine)
 
         def generate(inp: SpeechGenerationInput) -> GeneratedAudio:
             sample_args = list(tts_args)
@@ -309,7 +334,42 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
 
         return generate
 
-    def _build_mlx_encode_cli(self, engine: ArgmaxOpenSourceEngine) -> str:
+    def _generate_mlx_talker_args(self) -> list[str]:
+        """Flag list for `ttskit-mlx-cli tts` (the CoreML+MLX-talker hybrid).
+
+        Mirrors the subset of `generate_tts_cli_args` the hybrid CLI accepts;
+        `models_path` maps to `--coreml-models-dir`.
+        """
+        args: list[str] = [
+            "--coreml-models-dir",
+            str(self.config.models_path),
+            "--temperature",
+            str(self.config.temperature),
+            "--top-k",
+            str(self.config.top_k),
+            "--max-new-tokens",
+            str(self.config.max_new_tokens),
+        ]
+        if self.config.seed is not None:
+            args.extend(["--seed", str(self.config.seed)])
+        if self.config.version_dir is not None:
+            args.extend(["--version-dir", self.config.version_dir])
+        for flag, value in [
+            ("--code-decoder-variant", self.config.code_decoder_variant),
+            ("--multi-code-decoder-variant", self.config.multi_code_decoder_variant),
+            ("--code-embedder-variant", self.config.code_embedder_variant),
+            ("--multi-code-embedder-variant", self.config.multi_code_embedder_variant),
+            ("--text-projector-variant", self.config.text_projector_variant),
+            ("--speech-decoder-variant", self.config.speech_decoder_variant),
+            ("--speaker-encoder-variant", self.config.speaker_encoder_variant),
+            ("--speech-encoder-variant", self.config.speech_encoder_variant),
+            ("--speech-encoder-rvq-variant", self.config.speech_encoder_rvq_variant),
+        ]:
+            if value is not None:
+                args.extend([flag, value])
+        return args
+
+    def _build_mlx_cli(self, engine: ArgmaxOpenSourceEngine) -> str:
         """Build `ttskit-mlx-cli` from the Extensions/TTSKitMLX package in the
         same checkout argmax-cli was built from."""
         import subprocess
@@ -322,8 +382,8 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         ext_dir = repo_dir / "Extensions" / "TTSKitMLX"
         if not ext_dir.is_dir():
             raise RuntimeError(
-                f"encoder_backend=mlx requires Extensions/TTSKitMLX in the argmax-oss checkout ({ext_dir} missing). "
-                "Use a repo/commit that carries the MLX extension (e.g. berkin/voice-clone-mlx)."
+                f"This backend requires Extensions/TTSKitMLX in the argmax-oss checkout ({ext_dir} missing). "
+                "Use a repo/commit that carries the MLX extension."
             )
         logger.info("Building ttskit-mlx-cli in %s", ext_dir)
         build_cmd = "swift build -c release --product ttskit-mlx-cli"
