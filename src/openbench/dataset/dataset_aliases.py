@@ -655,6 +655,48 @@ def register_dataset_aliases() -> None:
         description="Voice-clone smoke-test subset (first 3 samples) for quick pipeline validation.",
     )
 
+    # Reference-length SIM study, hosted variant: argmaxinc/reflen-sim-eval.
+    # 50 call-center speakers, each with one fixed synthesis text (`prompt_text`,
+    # from the `targets` config) and a sweep of cumulative-length reference clips
+    # (5 s up to several minutes, from the `references` config). The `default`
+    # config is the flat per-reference join in the voiceclone-eval schema:
+    # `audio` + `target_text` are the reference clip/transcript (-> ref_audio /
+    # ref_text), `target_audio` is the held-out REAL recording of `prompt_text`
+    # (-> sim_audio), and `sample_idx` is `{source_id}-refNN`; `segment_count` /
+    # `reference_length` carry the sweep position for analysis.
+    DatasetRegistry.register_alias(
+        "reflen-sim-eval",
+        DatasetConfig(
+            dataset_id="argmaxinc/reflen-sim-eval",
+            subset="default",
+            split="train",
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description=(
+            "Reference-length SIM study (50 call-center speakers x cumulative reference-length "
+            "sweep) — per row: reference clip + transcript at one length, fixed same-speaker "
+            "synthesis text, and held-out real target audio as the SIM yardstick (WER + SIM)."
+        ),
+    )
+
+    # Smoke-test subset of reflen-sim-eval: same dataset, capped to the first 3
+    # samples (the three shortest references of the first speaker).
+    DatasetRegistry.register_alias(
+        "reflen-sim-eval-mini",
+        DatasetConfig(
+            dataset_id="argmaxinc/reflen-sim-eval",
+            subset="default",
+            split="train",
+            num_samples=3,
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description="Reference-length smoke-test subset (first 3 samples) for quick pipeline validation.",
+    )
+
     # Refclone / reference-length study: built locally from
     # argmaxinc/force_aligner_speech_regions via scripts/refclone/build_dataset.py.
     # Each row: target text + real target audio (SIM) + variable-length ref_audio/ref_text (ICL).
