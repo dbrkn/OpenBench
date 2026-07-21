@@ -157,9 +157,17 @@ class ArgmaxOpenSourceEngine:
         repo_name = repo_url_parts[-1]
         repo_owner = repo_url_parts[-2]
 
-        logger.info("Ensuring WhisperKit clone under %s", cache_root)
+        # argmaxtools' _maybe_git_clone keys the cached clone by repo NAME only
+        # and, on reuse, fetches whatever origin that clone was created from —
+        # so a fork's commits never appear in a clone made from the default
+        # repo (same basename). Namespace non-default owners under their own
+        # subdirectory so every origin gets its own clone.
+        clone_root = cache_root if repo_owner == "argmaxinc" else cache_root / repo_owner
+        clone_root.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Ensuring argmax-oss clone under %s", clone_root)
         repo_dir, commit_hash = _maybe_git_clone(
-            out_dir=str(cache_root),
+            out_dir=str(clone_root),
             hub_url="github.com",
             repo_name=repo_name,
             repo_owner=repo_owner,
