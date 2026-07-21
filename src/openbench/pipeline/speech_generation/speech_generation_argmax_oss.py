@@ -147,10 +147,10 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
     encoder_backend: Literal["coreml", "mlx"] = Field(
         default="coreml",
         description=(
-            "Voice-clone reference encoder. coreml: argmax-cli encodes in-process via --ref-audio "
-            "(fixed 10/15s windows). mlx: encode via the TTSKitMLX extension's ttskit-mlx-cli "
-            "(variable-length references), then drive argmax-cli with --voice-clone-prompt. "
-            "mlx requires the repo branch to contain Extensions/TTSKitMLX."
+            "Voice-clone reference encoder, passed as argmax-cli --voice-clone-encoder-backend. "
+            "coreml: fixed 10/15s windows, ANE. mlx: variable-length references, GPU (macOS 14+, "
+            "requires the Base-family mlx-community checkpoint in the local HF cache and a build "
+            "with the TTSKitMLX target)."
         ),
     )
     speaker_encoder_variant: str | None = Field(default=None, description="--speaker-encoder-variant.")
@@ -262,10 +262,9 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
             # xcodebuild-produced bundle next to the built binary once.
             self._graft_mlx_metallib(engine)
             tts_args.extend(["--code-decoder-backend", "mlx"])
-
-        mlx_encode_cli: str | None = None
-        if mode == "voice_clone" and encoder_backend == "mlx":
-            mlx_encode_cli = self._build_mlx_cli(engine)
+        if encoder_backend == "mlx":
+            self._graft_mlx_metallib(engine)
+            tts_args.extend(["--voice-clone-encoder-backend", "mlx"])
 
         def generate(inp: SpeechGenerationInput) -> GeneratedAudio:
             sample_args = list(tts_args)
@@ -280,29 +279,11 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
                         f"ICL voice_clone requires `ref_text` for sample {inp.audio_name!r}; "
                         "set `x_vector_only=true` to clone without it."
                     )
-                if mlx_encode_cli is not None:
-                    # Two-step MLX path: variable-length encode to a prompt JSON,
-                    # then drive argmax-cli with the precomputed prompt.
-                    import subprocess
-
-                    TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-                    prompt_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}.prompt.json"
-                    encode_cmd = [mlx_encode_cli, "encode", "--ref-audio", inp.ref_audio, "--output", str(prompt_path)]
-                    if inp.ref_text:
-                        encode_cmd.extend(["--ref-text", inp.ref_text])
-                    if x_vector_only:
-                        encode_cmd.append("--x-vector-only")
-                    try:
-                        subprocess.run(encode_cmd, check=True, capture_output=True, text=True)
-                    except subprocess.CalledProcessError as e:
-                        raise RuntimeError(f"ttskit-mlx-cli encode failed: {e.stderr}") from e
-                    sample_args.extend(["--voice-clone-prompt", str(prompt_path)])
+                sample_args.extend(["--ref-audio", inp.ref_audio])
+                if x_vector_only:
+                    sample_args.append("--x-vector-only")
                 else:
-                    sample_args.extend(["--ref-audio", inp.ref_audio])
-                    if x_vector_only:
-                        sample_args.append("--x-vector-only")
-                    else:
-                        sample_args.extend(["--ref-text", inp.ref_text])
+                    sample_args.extend(["--ref-text", inp.ref_text])
 
             TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             audio_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}{suffix}"
@@ -355,52 +336,6 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         if not built.exists():
             raise RuntimeError(f"xcodebuild did not produce {built}")
         shutil.copytree(built, bundle)
-
-    def _build_mlx_cli(self, engine: ArgmaxOpenSourceEngine) -> str:
-        """Build `ttskit-mlx-cli` from the Extensions/TTSKitMLX package in the
-        same checkout argmax-cli was built from."""
-        import subprocess
-
-        repo_dir = Path(engine.cli_path).resolve()
-        # engine.cli_path = <repo>/.build/<triple>/release/argmax-cli
-        while repo_dir.name != ".build" and repo_dir.parent != repo_dir:
-            repo_dir = repo_dir.parent
-        repo_dir = repo_dir.parent
-        ext_dir = repo_dir / "Extensions" / "TTSKitMLX"
-        if not ext_dir.is_dir():
-            raise RuntimeError(
-                f"This backend requires Extensions/TTSKitMLX in the argmax-oss checkout ({ext_dir} missing). "
-                "Use a repo/commit that carries the MLX extension."
-            )
-        logger.info("Building ttskit-mlx-cli in %s", ext_dir)
-        build_cmd = "swift build -c release --product ttskit-mlx-cli"
-        subprocess.run(build_cmd, cwd=ext_dir, shell=True, check=True)
-        result = subprocess.run(
-            f"{build_cmd} --show-bin-path", cwd=ext_dir, stdout=subprocess.PIPE, shell=True, text=True, check=True
-        )
-        bin_dir = Path(result.stdout.strip())
-        cli = bin_dir / "ttskit-mlx-cli"
-        if not cli.is_file():
-            raise RuntimeError(f"ttskit-mlx-cli not found after build: {cli}")
-
-        # Command-line SwiftPM can't compile mlx-swift's Metal shaders (see the
-        # extension README): produce the Cmlx bundle via xcodebuild once and
-        # graft it next to the SwiftPM binary so the kernels load at runtime.
-        bundle = bin_dir / "mlx-swift_Cmlx.bundle"
-        if not bundle.exists():
-            logger.info("Grafting mlx-swift Metal bundle via xcodebuild (one-time per checkout)")
-            subprocess.run(
-                "xcodebuild build -scheme ttskit-mlx-cli -destination platform=macOS "
-                "-derivedDataPath .build/xcode -quiet",
-                cwd=ext_dir,
-                shell=True,
-                check=True,
-            )
-            built = ext_dir / ".build" / "xcode" / "Build" / "Products" / "Debug" / "mlx-swift_Cmlx.bundle"
-            if not built.exists():
-                raise RuntimeError(f"xcodebuild did not produce {built}")
-            shutil.copytree(built, bundle)
-        return str(cli)
 
     def parse_input(self, input_sample: SpeechGenerationSample) -> SpeechGenerationInput:
         import soundfile as sf
