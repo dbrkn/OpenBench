@@ -156,6 +156,14 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
     speaker_encoder_variant: str | None = Field(default=None, description="--speaker-encoder-variant.")
     speech_encoder_variant: str | None = Field(default=None, description="--speech-encoder-variant.")
     speech_encoder_rvq_variant: str | None = Field(default=None, description="--speech-encoder-rvq-variant.")
+    target_chunk_size: int | None = Field(
+        default=None,
+        description=(
+            "--target-chunk-size (characters). The CLI default (42) splits eval texts into many "
+            "more chunks than the Python prototype's 35-word chunker (~190 chars); pass ~190 for "
+            "protocol parity — fewer seams and fewer full ICL prefills per sample."
+        ),
+    )
     mlx_max_sequence_length: int | None = Field(
         default=None,
         description=(
@@ -190,6 +198,8 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
         ]
         if self.seed is not None:
             args.extend(["--seed", str(self.seed)])
+        if self.target_chunk_size is not None:
+            args.extend(["--target-chunk-size", str(self.target_chunk_size)])
         if self.instruction is not None:
             args.extend(["--instruction", self.instruction])
         if self.model is not None:
