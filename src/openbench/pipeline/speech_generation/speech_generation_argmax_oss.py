@@ -156,6 +156,22 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
     speaker_encoder_variant: str | None = Field(default=None, description="--speaker-encoder-variant.")
     speech_encoder_variant: str | None = Field(default=None, description="--speech-encoder-variant.")
     speech_encoder_rvq_variant: str | None = Field(default=None, description="--speech-encoder-rvq-variant.")
+    mlx_max_sequence_length: int | None = Field(
+        default=None,
+        description=(
+            "--mlx-max-sequence-length (talker_backend=mlx only): KV budget in positions for the MLX "
+            "talker (ICL prefix + generated frames; ~12.5 positions per reference second). The CLI "
+            "default is 1024; long-reference sweeps need e.g. 6144."
+        ),
+    )
+    max_reference_seconds: float | None = Field(
+        default=None,
+        description=(
+            "--max-reference-seconds (encoder_backend=mlx only): reference-duration cap. The CLI "
+            "default is 120 s; encode peak Metal memory scales ~90 MB per reference second, so raise "
+            "it only on runners with enough unified memory (the reflen sweep needs ~450)."
+        ),
+    )
 
     def generate_tts_cli_args(self) -> list[str]:
         args: list[str] = [
@@ -262,9 +278,13 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
             # xcodebuild-produced bundle next to the built binary once.
             self._graft_mlx_metallib(engine)
             tts_args.extend(["--code-decoder-backend", "mlx"])
+            if self.config.mlx_max_sequence_length is not None:
+                tts_args.extend(["--mlx-max-sequence-length", str(self.config.mlx_max_sequence_length)])
         if encoder_backend == "mlx":
             self._graft_mlx_metallib(engine)
             tts_args.extend(["--voice-clone-encoder-backend", "mlx"])
+            if self.config.max_reference_seconds is not None:
+                tts_args.extend(["--max-reference-seconds", str(self.config.max_reference_seconds)])
 
         def generate(inp: SpeechGenerationInput) -> GeneratedAudio:
             sample_args = list(tts_args)
