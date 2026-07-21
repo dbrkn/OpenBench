@@ -138,11 +138,10 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
     talker_backend: Literal["coreml", "mlx"] = Field(
         default="coreml",
         description=(
-            "CodeDecoder (talker) backend. coreml (default): argmax-cli's CoreML talker. "
-            "mlx: drive generation through ttskit-mlx-cli (Extensions/TTSKitMLX) — the MLX "
-            "talker with batched ICL prefill and no KV cap; encoders/embedders/decoders stay "
-            "CoreML. Requires models_path (a local model dir; ttskit-mlx-cli does not download) "
-            "and encoder_backend=coreml."
+            "CodeDecoder (talker) backend, passed as argmax-cli --code-decoder-backend. "
+            "mlx: the MLX talker (batched ICL prefill, no KV cap; macOS 14+, requires the "
+            "Base-family mlx-community checkpoint in the local HF cache and a build with "
+            "the TTSKitMLX target). Everything else stays CoreML."
         ),
     )
     encoder_backend: Literal["coreml", "mlx"] = Field(
@@ -256,20 +255,13 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         encoder_backend = self.config.encoder_backend
         talker_backend = self.config.talker_backend
 
+        tts_args = self.config.generate_tts_cli_args()
         if talker_backend == "mlx":
-            # ttskit-mlx-cli runs the hybrid (CoreML encoders/embedders/decoders +
-            # MLX talker) in-process; it has its own flag surface and no Hub
-            # download, so a local models_path is mandatory.
-            if encoder_backend != "coreml":
-                raise ValueError("talker_backend=mlx requires encoder_backend=coreml (in-process CoreML encode).")
-            if mode != "voice_clone":
-                raise ValueError("talker_backend=mlx currently supports voice_clone mode only.")
-            if not self.config.models_path:
-                raise ValueError("talker_backend=mlx requires models_path (local CoreML model dir).")
-            engine.cli_path = self._build_mlx_cli(engine)
-            tts_args = self._generate_mlx_talker_args()
-        else:
-            tts_args = self.config.generate_tts_cli_args()
+            # Single CLI: the MLX talker is a flag on argmax-cli. Command-line
+            # SwiftPM can't compile mlx-swift's Metal shaders, so graft the
+            # xcodebuild-produced bundle next to the built binary once.
+            self._graft_mlx_metallib(engine)
+            tts_args.extend(["--code-decoder-backend", "mlx"])
 
         mlx_encode_cli: str | None = None
         if mode == "voice_clone" and encoder_backend == "mlx":
@@ -334,40 +326,35 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
 
         return generate
 
-    def _generate_mlx_talker_args(self) -> list[str]:
-        """Flag list for `ttskit-mlx-cli tts` (the CoreML+MLX-talker hybrid).
+    def _graft_mlx_metallib(self, engine: ArgmaxOpenSourceEngine) -> None:
+        """Place mlx-swift's Metal shader bundle next to the built argmax-cli.
 
-        Mirrors the subset of `generate_tts_cli_args` the hybrid CLI accepts;
-        `models_path` maps to `--coreml-models-dir`.
+        Command-line SwiftPM cannot compile mlx-swift's Metal shaders (runtime
+        'Failed to load the default metallib'); build the bundle once via
+        xcodebuild and copy it into the SwiftPM release bin dir.
         """
-        args: list[str] = [
-            "--coreml-models-dir",
-            str(self.config.models_path),
-            "--temperature",
-            str(self.config.temperature),
-            "--top-k",
-            str(self.config.top_k),
-            "--max-new-tokens",
-            str(self.config.max_new_tokens),
-        ]
-        if self.config.seed is not None:
-            args.extend(["--seed", str(self.config.seed)])
-        if self.config.version_dir is not None:
-            args.extend(["--version-dir", self.config.version_dir])
-        for flag, value in [
-            ("--code-decoder-variant", self.config.code_decoder_variant),
-            ("--multi-code-decoder-variant", self.config.multi_code_decoder_variant),
-            ("--code-embedder-variant", self.config.code_embedder_variant),
-            ("--multi-code-embedder-variant", self.config.multi_code_embedder_variant),
-            ("--text-projector-variant", self.config.text_projector_variant),
-            ("--speech-decoder-variant", self.config.speech_decoder_variant),
-            ("--speaker-encoder-variant", self.config.speaker_encoder_variant),
-            ("--speech-encoder-variant", self.config.speech_encoder_variant),
-            ("--speech-encoder-rvq-variant", self.config.speech_encoder_rvq_variant),
-        ]:
-            if value is not None:
-                args.extend([flag, value])
-        return args
+        import subprocess
+
+        bin_dir = Path(engine.cli_path).resolve().parent
+        bundle = bin_dir / "mlx-swift_Cmlx.bundle"
+        if bundle.exists():
+            return
+        repo_dir = bin_dir
+        while repo_dir.name != ".build" and repo_dir.parent != repo_dir:
+            repo_dir = repo_dir.parent
+        repo_dir = repo_dir.parent
+        logger.info("Grafting mlx-swift Metal bundle via xcodebuild (one-time per checkout)")
+        subprocess.run(
+            "xcodebuild build -scheme argmax-cli -destination platform=macOS "
+            "-derivedDataPath .build/xcode -quiet",
+            cwd=repo_dir,
+            shell=True,
+            check=True,
+        )
+        built = repo_dir / ".build" / "xcode" / "Build" / "Products" / "Debug" / "mlx-swift_Cmlx.bundle"
+        if not built.exists():
+            raise RuntimeError(f"xcodebuild did not produce {built}")
+        shutil.copytree(built, bundle)
 
     def _build_mlx_cli(self, engine: ArgmaxOpenSourceEngine) -> str:
         """Build `ttskit-mlx-cli` from the Extensions/TTSKitMLX package in the
