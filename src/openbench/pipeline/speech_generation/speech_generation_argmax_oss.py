@@ -159,9 +159,10 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
     target_chunk_size: int | None = Field(
         default=None,
         description=(
-            "--target-chunk-size (characters). The CLI default (42) splits eval texts into many "
-            "more chunks than the Python prototype's 35-word chunker (~190 chars); pass ~190 for "
-            "protocol parity — fewer seams and fewer full ICL prefills per sample."
+            "--target-chunk-size in TOKENS (not characters). The CLI default (42 tokens ~ 32 "
+            "words) already matches the Python prototype's 35-word chunker; leave unset unless "
+            "deliberately changing chunk granularity. Values much larger than ~60 push chunks "
+            "past the --max-new-tokens frame budget and silently truncate speech (WER inflation)."
         ),
     )
     mlx_max_sequence_length: int | None = Field(
