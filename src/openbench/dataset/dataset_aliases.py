@@ -697,6 +697,44 @@ def register_dataset_aliases() -> None:
         description="Reference-length smoke-test subset (first 3 samples) for quick pipeline validation.",
     )
 
+    # Prompt-length SIM study, hosted variant: argmaxinc/promptlen-sim-eval.
+    # Fixed-length same-speaker references (30-96 s), synthesis texts swept by
+    # length (`prompt_length` 22-1013 chars). Same flat voiceclone-eval schema
+    # except the reference clip ships as `reference_audio` (mapped to `audio`
+    # here); `target_audio` is the held-out REAL recording (-> sim_audio) and
+    # `target_text` the reference transcript (-> ref_text).
+    DatasetRegistry.register_alias(
+        "promptlen-sim-eval",
+        DatasetConfig(
+            dataset_id="argmaxinc/promptlen-sim-eval",
+            split="train",
+            column_mapping={"reference_audio": "audio"},
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description=(
+            "Prompt-length SIM study (126 samples, call-center speakers) — fixed reference "
+            "clip + transcript per speaker with synthesis-text length swept 22-1013 chars, "
+            "held-out real target audio as the SIM yardstick (WER + SIM)."
+        ),
+    )
+
+    # Smoke-test subset of promptlen-sim-eval (first 3 samples).
+    DatasetRegistry.register_alias(
+        "promptlen-sim-eval-mini",
+        DatasetConfig(
+            dataset_id="argmaxinc/promptlen-sim-eval",
+            split="train",
+            num_samples=3,
+            column_mapping={"reference_audio": "audio"},
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description="Prompt-length smoke-test subset (first 3 samples) for quick pipeline validation.",
+    )
+
     # Refclone / reference-length study: built locally from
     # argmaxinc/force_aligner_speech_regions via scripts/refclone/build_dataset.py.
     # Each row: target text + real target audio (SIM) + variable-length ref_audio/ref_text (ICL).
