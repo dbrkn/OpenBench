@@ -356,13 +356,24 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
             repo_dir = repo_dir.parent
         repo_dir = repo_dir.parent
         logger.info("Grafting mlx-swift Metal bundle via xcodebuild (one-time per checkout)")
-        subprocess.run(
+        build_cmd = (
             "xcodebuild build -scheme argmax-cli -destination platform=macOS "
-            "-derivedDataPath .build/xcode -quiet",
-            cwd=repo_dir,
-            shell=True,
-            check=True,
+            "-derivedDataPath .build/xcode -quiet"
         )
+        proc = subprocess.run(build_cmd, cwd=repo_dir, shell=True, capture_output=True, text=True)
+        if proc.returncode != 0:
+            # Since Xcode 26 the Metal compiler ships as a separately-downloaded
+            # component; fresh runners fail with "cannot execute tool 'metal'
+            # due to missing Metal Toolchain". Install it once and retry.
+            if "Metal Toolchain" in (proc.stdout + proc.stderr):
+                logger.info("Metal Toolchain missing on this machine; downloading via xcodebuild (one-time)")
+                subprocess.run("xcodebuild -downloadComponent MetalToolchain", shell=True, check=True)
+                proc = subprocess.run(build_cmd, cwd=repo_dir, shell=True, capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"xcodebuild metallib graft failed (exit {proc.returncode}):\n"
+                    f"{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}"
+                )
         built = repo_dir / ".build" / "xcode" / "Build" / "Products" / "Debug" / "mlx-swift_Cmlx.bundle"
         if not built.exists():
             raise RuntimeError(f"xcodebuild did not produce {built}")
