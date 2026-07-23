@@ -66,6 +66,14 @@ class QwenTTSSpeechGenerationConfig(PipelineConfig):
         default=False,
         description="Use x-vector-only cloning (skips ICL reference codes; ref_text unused).",
     )
+    skip_sample_file: str | None = Field(
+        default=None,
+        description=(
+            "Path to a newline-separated list of sample names to skip (raises a fast per-sample "
+            "error the runner logs and moves past). Crash-resume aid: fill it with the ids "
+            "already uploaded to the results repo so restarts never regenerate them."
+        ),
+    )
 
 
 @register_pipeline
@@ -98,8 +106,14 @@ class QwenTTSSpeechGenerationPipeline(Pipeline):
         )
         fallback_language = self.config.language
         x_vector_only = self.config.x_vector_only
+        skip = set()
+        if self.config.skip_sample_file:
+            skip = {l.strip() for l in open(self.config.skip_sample_file) if l.strip()}
+            logger.info("Skipping %d already-scored samples", len(skip))
 
         def generate(inp: QwenTTSInput) -> GeneratedAudio:
+            if inp.audio_name in skip:
+                raise RuntimeError(f"skipped: {inp.audio_name} already scored in a previous attempt")
             if not inp.ref_audio:
                 raise ValueError(f"voice_clone requires a reference clip for sample {inp.audio_name!r}")
             if not x_vector_only and not inp.ref_text:
