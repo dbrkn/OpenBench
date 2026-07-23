@@ -5,6 +5,10 @@ from .speech_generation_argmax_oss import (
     ArgmaxOpenSourceSpeechGenerationConfig,
     ArgmaxOpenSourceSpeechGenerationPipeline,
 )
+from .speech_generation_qwen_tts import (
+    QwenTTSSpeechGenerationConfig,
+    QwenTTSSpeechGenerationPipeline,
+)
 from .speech_generation_argmax_prototype import (
     ArgmaxPrototypeSpeechGenerationConfig,
     ArgmaxPrototypeSpeechGenerationPipeline,

@@ -697,6 +697,24 @@ def register_dataset_aliases() -> None:
         description="Reference-length smoke-test subset (first 3 samples) for quick pipeline validation.",
     )
 
+    # The exact 100 reflen samples scored by the local Swift throughput run
+    # (voice-clone-benchmark rows as of 2026-07-22): cross-implementation
+    # comparisons re-run precisely this subset.
+    DatasetRegistry.register_alias(
+        "reflen-sim-eval-100",
+        DatasetConfig(
+            dataset_id="argmaxinc/reflen-sim-eval-100",
+            split="train",
+        ),
+        supported_pipeline_types={
+            PipelineType.SPEECH_GENERATION,
+        },
+        description=(
+            "reflen-sim-eval subset (100 samples, refs <= 240 s) matching the local Swift "
+            "throughput-vocoder run for implementation-neutral A/B comparisons."
+        ),
+    )
+
     # Prompt-length SIM study, hosted variant: argmaxinc/promptlen-sim-eval.
     # Fixed-length same-speaker references (30-96 s), synthesis texts swept by
     # length (`prompt_length` 22-1013 chars). Same flat voiceclone-eval schema

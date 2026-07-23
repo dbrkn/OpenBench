@@ -28,6 +28,7 @@ from .orchestration import (
 )
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import (
+    QwenTTSSpeechGenerationPipeline,
     ArgmaxOpenSourceSpeechGenerationPipeline,
     ArgmaxPrototypeSpeechGenerationPipeline,
 )
@@ -764,6 +765,20 @@ def register_pipeline_aliases() -> None:
             "unless `cli_path` is set. WER is computed by `SpeechGenerationWordErrorRate`, which transcribes "
             "the generated audio with WhisperKitPro / parakeet-v2 by default and compares against the original "
             "prompt; that metric requires `WHISPERKITPRO_CLI_PATH`."
+        ),
+    )
+
+    PipelineRegistry.register_alias(
+        "qwen-tts-speech-generation",
+        QwenTTSSpeechGenerationPipeline,
+        default_config={
+            "out_dir": "./speech_generation_results",
+        },
+        description=(
+            "Upstream Qwen3-TTS reference pipeline (github.com/QwenLM/Qwen3-TTS, `pip install qwen-tts`). "
+            "Voice-clone generation via Qwen3TTSModel.generate_voice_clone in pure PyTorch — the "
+            "implementation-neutral baseline for the Argmax CoreML/MLX pipelines. Requires the qwen-tts "
+            "package and a torch device (config: model_id / device / dtype / attn_implementation)."
         ),
     )
 
