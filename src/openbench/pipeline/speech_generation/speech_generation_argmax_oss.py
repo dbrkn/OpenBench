@@ -165,6 +165,14 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
             "past the --max-new-tokens frame budget and silently truncate speech (WER inflation)."
         ),
     )
+    mlx_model_dir: str | None = Field(
+        default=None,
+        description=(
+            "--mlx-model-dir: Qwen3-TTS MLX checkpoint snapshot directory for the mlx talker/encoder "
+            "backends. Defaults to the CLI's cached 0.6B-Base snapshot; REQUIRED for other model "
+            "sizes (e.g. the 1.7B-Base checkpoint's snapshot path)."
+        ),
+    )
     mlx_max_sequence_length: int | None = Field(
         default=None,
         description=(
@@ -294,6 +302,8 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
         if encoder_backend == "mlx":
             self._graft_mlx_metallib(engine)
             tts_args.extend(["--voice-clone-encoder-backend", "mlx"])
+        if self.config.mlx_model_dir and (talker_backend == "mlx" or encoder_backend == "mlx"):
+            tts_args.extend(["--mlx-model-dir", self.config.mlx_model_dir])
             if self.config.max_reference_seconds is not None:
                 tts_args.extend(["--max-reference-seconds", str(self.config.max_reference_seconds)])
 
