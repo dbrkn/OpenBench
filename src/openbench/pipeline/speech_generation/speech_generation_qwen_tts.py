@@ -116,6 +116,12 @@ class QwenTTSSpeechGenerationPipeline(Pipeline):
             TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             audio_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}.wav"
             sf.write(str(audio_path), wavs[0], sr)
+            # MPS accumulates allocator/command-buffer state across long
+            # autoregressive generations and eventually aborts the process
+            # silently; flush it after every sample.
+            if self.config.device.startswith("mps"):
+                torch.mps.synchronize()
+                torch.mps.empty_cache()
             duration = float(librosa.get_duration(path=str(audio_path)))
             return GeneratedAudio(
                 audio_path=str(audio_path),
