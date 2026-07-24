@@ -1,7 +1,7 @@
 .PHONY: setup test install-pre-commit format display-config download-datasets help
 
 setup:
-	@uv sync --locked
+	@uv sync
 	@make install-pre-commit
 
 test:
