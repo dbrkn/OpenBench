@@ -121,3 +121,10 @@ class MetricOptions(Enum):
     # and a reference clip, as used by BytedanceSpeech/seed-tts-eval (cal_sim.sh).
     # The aggregate mean is reported as ASV and its variance as ASV-var.
     SIM = "sim"
+
+    # Windowed Speaker Similarity (SIM-windowed)
+    # SIM computed per sliding window of the generated clip against the whole
+    # reference embedding; per sample the windowed mean is the metric value and
+    # mean/variance/min/max across windows are logged. Surfaces localized
+    # speaker-identity drift that whole-clip SIM averages away.
+    SIM_WINDOWED = "sim-windowed"

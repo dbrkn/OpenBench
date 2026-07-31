@@ -10,7 +10,7 @@ import soundfile as sf
 from argmaxtools.utils import get_logger
 from datasets import Dataset as HfDataset
 from datasets import load_dataset
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from ..types import PredictionProtocol
 from .dataset_utils import validate_hf_dataset_schema
@@ -32,6 +32,28 @@ class DatasetConfig(BaseModel):
     num_samples: int | None = Field(
         None, description="Number of samples to take from the dataset. If None, take all samples."
     )
+    num_shards: int | None = Field(
+        None,
+        description=(
+            "Split the dataset into this many shards and keep only `shard_index`, so one sweep "
+            "can be spread over several machines or CI jobs. Shards are interleaved (row i goes "
+            "to shard i % num_shards) rather than contiguous, so per-sample cost — e.g. voice-clone "
+            "reference length — spreads evenly instead of piling into one shard."
+        ),
+    )
+    shard_index: int = Field(0, description="Which shard to keep when `num_shards` is set (0-based).")
+    exclude_sample_ids: frozenset[str] | None = Field(
+        None,
+        description=(
+            "Drop rows whose `sample_id_column` value appears in this set. Lets an interrupted "
+            "sweep resume without recomputing samples that already have results. Applied after "
+            "sharding, so shard membership does not shift as results accumulate."
+        ),
+    )
+    sample_id_column: str = Field(
+        "sample_idx",
+        description="Column holding the dataset-stable sample id matched against `exclude_sample_ids`.",
+    )
     column_mapping: Mapping[str, str] | None = Field(
         None, description="Mapping of the column names in the dataset to the expected column names in the sample class"
     )
@@ -43,6 +65,11 @@ class DatasetConfig(BaseModel):
             "The function signature should be `def transform(row: dict[str, Any]) -> dict[str, Any]` where the key is the post column mapping name and the value is the transformed column."
         ),
     )
+
+    @field_serializer("exclude_sample_ids")
+    def _serialize_exclude_sample_ids(self, sample_ids: frozenset[str] | None) -> list[str] | None:
+        """Dump the id set as a sorted list, since a set is not JSON serializable."""
+        return sorted(sample_ids) if sample_ids else None
 
     def load(self) -> HfDataset:
         """Load dataset from config.
@@ -83,24 +110,39 @@ class DatasetConfig(BaseModel):
             split = self.split or "test"  # Default split
             ds = load_local_dataset(dataset_dir=dataset_path, split=split)
 
-        if self.num_samples is not None:
-            ds = ds.take(self.num_samples)
-
-        if self.column_mapping is not None:
-            ds = ds.rename_columns(self.column_mapping)
-
-        if self.column_transforms is not None:
-            for col, transform in self.column_transforms.items():
-                ds = ds.map(transform)
-
-        return ds
+        return self._postprocess(ds)
 
     def _load_huggingface(self) -> HfDataset:
         """Load dataset from HuggingFace Hub."""
         # TODO: Add support for streaming datasets
         ds = load_dataset(self.dataset_id, self.subset, split=self.split)
+        return self._postprocess(ds)
+
+    def _postprocess(self, ds: HfDataset) -> HfDataset:
+        """Apply row selection (sampling, sharding, exclusions) then column fixups."""
         if self.num_samples is not None:
             ds = ds.take(self.num_samples)
+
+        if self.num_shards is not None and self.num_shards > 1:
+            if not 0 <= self.shard_index < self.num_shards:
+                raise ValueError(f"shard_index must be in [0, {self.num_shards}), got {self.shard_index}")
+            total = len(ds)
+            # contiguous=False keeps the interleaved ds[shard_index::num_shards]
+            # assignment, which balances cost across shards.
+            ds = ds.shard(num_shards=self.num_shards, index=self.shard_index, contiguous=False)
+            logger.info(f"Shard {self.shard_index}/{self.num_shards}: kept {len(ds)} of {total} rows (interleaved)")
+
+        if self.exclude_sample_ids:
+            if self.sample_id_column not in ds.column_names:
+                raise ValueError(
+                    f"exclude_sample_ids needs column {self.sample_id_column!r}, "
+                    f"but the dataset only has {ds.column_names}"
+                )
+            excluded = self.exclude_sample_ids
+            before = len(ds)
+            # input_columns keeps the filter from decoding the audio columns.
+            ds = ds.filter(lambda sample_id: str(sample_id) not in excluded, input_columns=self.sample_id_column)
+            logger.info(f"Excluded {before - len(ds)} already-completed rows, {len(ds)} left to evaluate")
 
         if self.column_mapping is not None:
             ds = ds.rename_columns(self.column_mapping)

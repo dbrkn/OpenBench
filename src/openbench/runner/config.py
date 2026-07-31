@@ -37,6 +37,14 @@ class BenchmarkConfig(BaseModel):
     hf_results_flush_every: int = Field(
         100, description="Flush buffered per-sample results to the HF repo every N samples."
     )
+    hf_results_chunk_tag: str | None = Field(
+        None,
+        description=(
+            "Suffix appended to the uploaded parquet shard names. Required when several runs "
+            "(e.g. dataset shards) push to one repo at the same time, since each picks its "
+            "starting chunk index independently and identical names would overwrite."
+        ),
+    )
     continue_on_sample_error: bool = Field(
         True,
         description=(
@@ -53,4 +61,9 @@ class BenchmarkConfig(BaseModel):
         wandb_config: dict[str, Any] = self.model_dump()
         # Convert `metrics` that use enums to their respective values
         wandb_config["metrics"] = {metric.value: kwargs for metric, kwargs in wandb_config["metrics"].items()}
+        # A resumed sweep excludes every already-scored id; log how many were
+        # skipped instead of listing them, which would swamp the run config.
+        for dataset in wandb_config.get("datasets", {}).values():
+            if dataset.get("exclude_sample_ids") is not None:
+                dataset["exclude_sample_ids"] = f"{len(dataset['exclude_sample_ids'])} already-scored ids"
         return wandb_config
