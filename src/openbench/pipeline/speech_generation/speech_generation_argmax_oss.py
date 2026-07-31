@@ -189,6 +189,23 @@ class ArgmaxOpenSourceSpeechGenerationConfig(PipelineConfig):
             "it only on runners with enough unified memory (the reflen sweep needs ~450)."
         ),
     )
+    guardrails: str | None = Field(
+        default=None,
+        description=(
+            "--guardrails (talker_backend=mlx only): decode-time guardrail mode on builds that carry "
+            "them (berkin/voice-clone-guardrails-* heads). 'off' | 'native' | 'v2' | 'aci' (RD-691 "
+            "hard-CMask + prefill-DP; also de-pauses the reference). Omit to skip the flag entirely "
+            "for builds without it."
+        ),
+    )
+    depause_reference: bool = Field(
+        default=False,
+        description=(
+            "--depause-reference (talker_backend=mlx only): strip long silent pauses from the "
+            "reference before ICL prefill. guardrails=aci already implies this; set it to de-pause "
+            "on other arms."
+        ),
+    )
 
     def generate_tts_cli_args(self) -> list[str]:
         args: list[str] = [
@@ -299,6 +316,10 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
             tts_args.extend(["--code-decoder-backend", "mlx"])
             if self.config.mlx_max_sequence_length is not None:
                 tts_args.extend(["--mlx-max-sequence-length", str(self.config.mlx_max_sequence_length)])
+            if self.config.guardrails is not None:
+                tts_args.extend(["--guardrails", self.config.guardrails])
+            if self.config.depause_reference:
+                tts_args.append("--depause-reference")
         if encoder_backend == "mlx":
             self._graft_mlx_metallib(engine)
             tts_args.extend(["--voice-clone-encoder-backend", "mlx"])
