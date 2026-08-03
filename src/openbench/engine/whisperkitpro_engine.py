@@ -121,7 +121,10 @@ class WhisperKitProConfig(BaseModel):
     )
     fast_load: bool = Field(
         False,
-        description="Whether to use fast load",
+        description=(
+            "Deprecated and ignored: the --fast-load CLI flag was removed in argmax-sdk-swift "
+            "(SW-1082, PR #395) and passing it fails argument parsing on current CLIs."
+        ),
     )
 
     @property
@@ -177,8 +180,6 @@ class WhisperKitProConfig(BaseModel):
                 COMPUTE_UNITS_MAPPER[self.audio_encoder_compute_units],
                 "--text-decoder-compute-units",
                 COMPUTE_UNITS_MAPPER[self.text_decoder_compute_units],
-                "--fast-load",
-                str(self.fast_load).lower(),
                 "--verbose",
             ]
         )
