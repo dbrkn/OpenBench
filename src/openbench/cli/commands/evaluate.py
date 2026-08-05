@@ -196,6 +196,7 @@ def run_alias_mode(
     hf_results_repo: str | None = None,
     hf_results_flush_every: int = 100,
     hf_results_chunk_tag: str | None = None,
+    hf_results_extra: str | None = None,
     dataset_shard: str | None = None,
     skip_completed_in: str | None = None,
     metric_config: list[str] | None = None,
@@ -251,12 +252,23 @@ def run_alias_mode(
             shard_index, num_shards = parse_dataset_shard(dataset_shard)
             dataset_overrides.update(num_shards=num_shards, shard_index=shard_index)
             typer.echo(f"🔀 Dataset shard {shard_index} of {num_shards} (interleaved)")
+        # `--hf-results-extra seed=42,guardrails=aci`: constant columns stamped
+        # onto every sink row; resume below then only skips rows of THIS combo.
+        extra_cols: dict[str, str] | None = None
+        if hf_results_extra:
+            extra_cols = {}
+            for kv in hf_results_extra.replace(",", " ").split():
+                if "=" not in kv:
+                    raise typer.BadParameter(f"--hf-results-extra expects key=value pairs, got {kv!r}")
+                k, v = kv.split("=", 1)
+                extra_cols[k.strip()] = v.strip()
         if skip_completed_in:
             from openbench.runner.speech_generation_sink import completed_sample_ids
 
             repos = [repo for repo in (r.strip() for r in skip_completed_in.split(",")) if repo]
-            completed = completed_sample_ids(repos)
-            typer.echo(f"⏭️  Skipping {len(completed)} samples already scored in {', '.join(repos)}")
+            completed = completed_sample_ids(repos, match=extra_cols)
+            typer.echo(f"⏭️  Skipping {len(completed)} samples already scored in {', '.join(repos)}"
+                       + (f" (matching {extra_cols})" if extra_cols else ""))
             if completed:
                 dataset_overrides["exclude_sample_ids"] = frozenset(completed)
         if dataset_overrides:
@@ -298,6 +310,7 @@ def run_alias_mode(
             hf_results_repo=hf_results_repo,
             hf_results_flush_every=hf_results_flush_every,
             hf_results_chunk_tag=hf_results_chunk_tag,
+            hf_results_extra=extra_cols,
         )
 
         # Create runner
@@ -466,6 +479,16 @@ def evaluate(
             "overwrite each other's shards."
         ),
     ),
+    hf_results_extra: str | None = typer.Option(
+        None,
+        "--hf-results-extra",
+        help=(
+            "Constant extra columns stamped onto every results-sink row, as comma/space-separated "
+            "key=value pairs, e.g. `--hf-results-extra seed=42,guardrails=aci`. With "
+            "--skip-completed-in, resume only skips rows whose extra columns match — so a "
+            "multi-arm/multi-seed sweep can share one results repo. Alias mode only."
+        ),
+    ),
     dataset_shard: str | None = typer.Option(
         None,
         "--dataset-shard",
@@ -536,6 +559,7 @@ def evaluate(
                 "--dataset-shard": dataset_shard,
                 "--skip-completed-in": skip_completed_in,
                 "--hf-results-chunk-tag": hf_results_chunk_tag,
+                "--hf-results-extra": hf_results_extra,
             }
             unsupported = [flag for flag, value in alias_only.items() if value]
             if unsupported:
@@ -561,6 +585,7 @@ def evaluate(
                 hf_results_repo=hf_results_repo,
                 hf_results_flush_every=hf_results_flush_every,
                 hf_results_chunk_tag=hf_results_chunk_tag,
+                hf_results_extra=hf_results_extra,
                 dataset_shard=dataset_shard,
                 skip_completed_in=skip_completed_in,
                 metric_config=metric_config,

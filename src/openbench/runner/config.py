@@ -45,6 +45,15 @@ class BenchmarkConfig(BaseModel):
             "starting chunk index independently and identical names would overwrite."
         ),
     )
+    hf_results_extra: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Constant extra columns stamped onto every results-sink row (e.g. "
+            "{'seed': '42', 'guardrails': 'aci'} for a multi-arm sweep sharing one repo). "
+            "Resume (`skip_completed_in`) then only skips rows whose extra columns match, "
+            "so the same sample can be scored once per arm/seed combination."
+        ),
+    )
     continue_on_sample_error: bool = Field(
         True,
         description=(

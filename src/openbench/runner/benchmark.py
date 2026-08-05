@@ -81,6 +81,7 @@ class BenchmarkRunner:
             repo_id=self.config.hf_results_repo,
             flush_every=self.config.hf_results_flush_every,
             chunk_tag=self.config.hf_results_chunk_tag,
+            extra_columns=self.config.hf_results_extra,
         )
 
     def _get_metrics(self, pipeline: Pipeline) -> dict[str, BaseMetric]:

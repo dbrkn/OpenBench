@@ -52,10 +52,15 @@ class SpeechGenerationResultSink:
         flush_every: int = 100,
         private: bool = True,
         chunk_tag: str | None = None,
+        extra_columns: "dict[str, str] | None" = None,
     ) -> None:
         self.repo_id = repo_id
         self.flush_every = max(1, int(flush_every))
         self.chunk_tag = _TAG_SANITIZE_RE.sub("-", chunk_tag).strip("-") if chunk_tag else None
+        # Constant per-run columns stamped onto every row (e.g. seed / guardrails
+        # for a multi-arm sweep sharing one repo); string-typed for schema
+        # stability across runs that set different keys.
+        self.extra_columns = {str(k): str(v) for k, v in (extra_columns or {}).items()}
         self._buffer: list[dict] = []
         self._api = HfApi()
 
@@ -115,9 +120,13 @@ class SpeechGenerationResultSink:
                 "wsim_min": Value("float32"),
                 "wsim_max": Value("float32"),
                 "wsim_min_start": Value("float32"),
+                # Constant per-run columns (multi-arm sweeps: e.g. seed, guardrails).
+                **{k: Value("string") for k in self.extra_columns},
             }
         )
         rows, self._buffer = self._buffer, []
+        if self.extra_columns:
+            rows = [{**r, **self.extra_columns} for r in rows]
         dataset = Dataset.from_list(rows, features=features)
 
         tag_suffix = f"-{self.chunk_tag}" if self.chunk_tag else ""
@@ -145,13 +154,21 @@ class SpeechGenerationResultSink:
         self.flush()
 
 
-def completed_sample_ids(repo_ids: Iterable[str], column: str = "sample_idx") -> set[str]:
+def completed_sample_ids(
+    repo_ids: Iterable[str], column: str = "sample_idx", match: "dict[str, str] | None" = None
+) -> set[str]:
     """Collect the sample ids already scored in the given HF results repos.
 
-    Only `column` is fetched from each parquet shard, so the (much larger)
-    embedded audio columns are never downloaded — reading the ids of a few
-    hundred results costs megabytes, not gigabytes. Repos that do not exist yet
-    contribute nothing, which makes a first run behave like a full sweep.
+    Only `column` (plus any `match` columns) is fetched from each parquet
+    shard, so the (much larger) embedded audio columns are never downloaded —
+    reading the ids of a few hundred results costs megabytes, not gigabytes.
+    Repos that do not exist yet contribute nothing, which makes a first run
+    behave like a full sweep.
+
+    `match` restricts resume to rows whose extra columns (see the sink's
+    `extra_columns`) equal the given values — a multi-arm sweep sharing one
+    repo then re-scores the same sample once per (seed, guardrails, …) combo.
+    Shards missing a match column contribute nothing (rows from other runs).
 
     Shards are read concurrently because the cost is per-file network latency,
     not bandwidth; a resumed sweep would otherwise spend a large part of its job
@@ -162,13 +179,23 @@ def completed_sample_ids(repo_ids: Iterable[str], column: str = "sample_idx") ->
     from huggingface_hub.utils import HfHubHTTPError
 
     completed: set[str] = set()
+    match = {str(k): str(v) for k, v in (match or {}).items()}
 
     def shard_ids(shard: str) -> set[str]:
         # A filesystem per worker: HfFileSystem holds a session that is not
         # guaranteed to be thread-safe.
         with HfFileSystem().open(shard, "rb") as handle:
-            table = pq.read_table(handle, columns=[column])
-        return {str(v) for v in table.column(column).to_pylist() if v is not None}
+            want = [column, *match.keys()]
+            if any(c not in pq.read_schema(handle).names for c in want):
+                return set()          # rows from a run without these columns
+            table = pq.read_table(handle, columns=want)
+        ids = table.column(column).to_pylist()
+        cols = {mc: table.column(mc).to_pylist() for mc in match}
+        return {
+            str(sid)
+            for i, sid in enumerate(ids)
+            if sid is not None and all(str(cols[mc][i]) == mv for mc, mv in match.items())
+        }
 
     for repo_id in repo_ids:
         repo_id = repo_id.strip()
