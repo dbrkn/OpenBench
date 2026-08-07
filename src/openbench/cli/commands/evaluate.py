@@ -200,6 +200,7 @@ def run_alias_mode(
     dataset_shard: str | None = None,
     skip_completed_in: str | None = None,
     metric_config: list[str] | None = None,
+    max_ref_seconds: float | None = None,
 ) -> BenchmarkResult:
     """Run evaluation using pipeline and dataset aliases."""
     try:
@@ -252,6 +253,9 @@ def run_alias_mode(
             shard_index, num_shards = parse_dataset_shard(dataset_shard)
             dataset_overrides.update(num_shards=num_shards, shard_index=shard_index)
             typer.echo(f"🔀 Dataset shard {shard_index} of {num_shards} (interleaved)")
+        if max_ref_seconds is not None:
+            dataset_overrides["max_reference_length"] = max_ref_seconds
+            typer.echo(f"✂️  Keeping only samples with reference < {max_ref_seconds:g}s")
         # `--hf-results-extra seed=42,guardrails=aci`: constant columns stamped
         # onto every sink row; resume below then only skips rows of THIS combo.
         extra_cols: dict[str, str] | None = None
@@ -508,6 +512,14 @@ def evaluate(
             "holding partial results. Alias mode only."
         ),
     ),
+    max_ref_seconds: float | None = typer.Option(
+        None,
+        "--max-ref-seconds",
+        help=(
+            "Keep only samples whose `reference_length` is strictly below this many seconds. "
+            "Applied before sharding, so shard membership is stable. Alias mode only."
+        ),
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
 ) -> None:
     """Run evaluation benchmarks.
@@ -560,6 +572,7 @@ def evaluate(
                 "--skip-completed-in": skip_completed_in,
                 "--hf-results-chunk-tag": hf_results_chunk_tag,
                 "--hf-results-extra": hf_results_extra,
+                "--max-ref-seconds": max_ref_seconds,
             }
             unsupported = [flag for flag, value in alias_only.items() if value]
             if unsupported:
@@ -589,6 +602,7 @@ def evaluate(
                 dataset_shard=dataset_shard,
                 skip_completed_in=skip_completed_in,
                 metric_config=metric_config,
+                max_ref_seconds=max_ref_seconds,
                 verbose=verbose,
             )
         display_result(result)

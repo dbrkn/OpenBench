@@ -120,6 +120,9 @@ class SpeechGenerationResultSink:
                 "wsim_min": Value("float32"),
                 "wsim_max": Value("float32"),
                 "wsim_min_start": Value("float32"),
+                # Guardrail trajectory JSONL dumped by the CLI (one JSON object per
+                # chunk); empty string when the run had no trajectory output.
+                "trajectory": Value("string"),
                 # Constant per-run columns (multi-arm sweeps: e.g. seed, guardrails).
                 **{k: Value("string") for k in self.extra_columns},
             }

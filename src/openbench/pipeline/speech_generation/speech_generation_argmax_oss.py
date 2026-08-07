@@ -349,18 +349,31 @@ class ArgmaxOpenSourceSpeechGenerationPipeline(Pipeline):
 
             TEMP_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
             audio_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}{suffix}"
+            # Ask the CLI for its guardrail trajectory (JSONL, one object per
+            # chunk); read back after generation and carry it on the prediction.
+            traj_path = TEMP_TTS_AUDIO_DIR / f"{inp.audio_name}.traj.jsonl"
+            traj_path.unlink(missing_ok=True)
             try:
                 output: TtsCliOutput = engine.tts(
                     TtsCliInput(text=inp.text, output_path=audio_path),
                     sample_args,
+                    env_overrides={"GUARDRAIL_TRAJECTORY_OUT": str(traj_path)},
                 )
                 duration = float(librosa.get_duration(path=str(output.audio_path)))
                 logger.debug("Generated TTS audio: %s (%.2fs)", output.audio_path, duration)
+                trajectory = None
+                try:
+                    if traj_path.exists():
+                        trajectory = traj_path.read_text()
+                        traj_path.unlink(missing_ok=True)
+                except Exception as traj_err:  # noqa: BLE001 - trajectory is best-effort telemetry
+                    logger.warning("Could not read guardrail trajectory for %s: %s", inp.audio_name, traj_err)
                 # SIM yardstick: prefer the explicit held-out target; else the clone prompt.
                 return GeneratedAudio(
                     audio_path=str(output.audio_path),
                     duration=duration,
                     reference_audio_path=inp.sim_audio or inp.ref_audio,
+                    trajectory=trajectory,
                 )
             except Exception:
                 # Clean up partial output so the temp dir doesn't grow across retries.

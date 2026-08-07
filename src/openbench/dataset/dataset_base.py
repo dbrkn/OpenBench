@@ -42,6 +42,13 @@ class DatasetConfig(BaseModel):
         ),
     )
     shard_index: int = Field(0, description="Which shard to keep when `num_shards` is set (0-based).")
+    max_reference_length: float | None = Field(
+        None,
+        description=(
+            "Keep only rows whose `reference_length` column is strictly below this many seconds. "
+            "Applied before sharding, so every shard draws from the same filtered set."
+        ),
+    )
     exclude_sample_ids: frozenset[str] | None = Field(
         None,
         description=(
@@ -120,6 +127,18 @@ class DatasetConfig(BaseModel):
 
     def _postprocess(self, ds: HfDataset) -> HfDataset:
         """Apply row selection (sampling, sharding, exclusions) then column fixups."""
+        if self.max_reference_length is not None:
+            if "reference_length" not in ds.column_names:
+                raise ValueError(
+                    f"max_reference_length needs a 'reference_length' column, "
+                    f"but the dataset only has {ds.column_names}"
+                )
+            limit = float(self.max_reference_length)
+            before = len(ds)
+            # input_columns keeps the filter from decoding the audio columns.
+            ds = ds.filter(lambda ref_len: float(ref_len) < limit, input_columns="reference_length")
+            logger.info(f"max_reference_length<{limit:g}s: kept {len(ds)} of {before} rows")
+
         if self.num_samples is not None:
             ds = ds.take(self.num_samples)
 

@@ -268,8 +268,17 @@ class ArgmaxOpenSourceEngine:
 
         return DiarizeCliOutput(rttm_path=input.rttm_path)
 
-    def tts(self, input: TtsCliInput, tts_args: list[str]) -> TtsCliOutput:
-        """Run `argmax-cli tts` with pre-built flag list (see TTS pipeline config)."""
+    def tts(
+        self, input: TtsCliInput, tts_args: list[str], env_overrides: dict[str, str] | None = None
+    ) -> TtsCliOutput:
+        """Run `argmax-cli tts` with pre-built flag list (see TTS pipeline config).
+
+        `env_overrides` entries are layered on top of the current environment for
+        the CLI subprocess only (e.g. GUARDRAIL_TRAJECTORY_OUT for per-sample
+        guardrail telemetry).
+        """
+        import os
+
         input.output_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
             self.cli_path,
@@ -280,9 +289,10 @@ class ArgmaxOpenSourceEngine:
             str(input.output_path),
             *tts_args,
         ]
+        env = {**os.environ, **env_overrides} if env_overrides else None
         logger.debug("Argmax OSS tts: %s", cmd)
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"argmax-cli tts failed: {e.stderr}") from e
 

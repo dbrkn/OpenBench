@@ -253,6 +253,13 @@ class GeneratedAudio(BaseModel):
         ...,
         description="Path to the generated audio file on disk (typically a WAV).",
     )
+    trajectory: str | None = Field(
+        None,
+        description=(
+            "Guardrail trajectory JSONL emitted by the generator for this sample "
+            "(one JSON object per decoded chunk), carried into the results sink."
+        ),
+    )
     duration: float = Field(
         ...,
         description="Duration of the generated audio in seconds.",

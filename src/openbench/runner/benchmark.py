@@ -296,6 +296,8 @@ class BenchmarkRunner:
             "wsim_min": wsim_min,
             "wsim_max": wsim_max,
             "wsim_min_start": wsim_min_start,
+            # Guardrail trajectory JSONL recorded by the pipeline, when available.
+            "trajectory": getattr(output.prediction, "trajectory", None) or "",
         }
 
     def _run_pipeline_on_dataset_parallel(
