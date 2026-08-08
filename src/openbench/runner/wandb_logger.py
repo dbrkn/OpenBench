@@ -230,6 +230,13 @@ class WandbLogger(ABC, Generic[SampleResult]):
 
         log_dict = {}
 
+        # A fully-resumed run scores zero new samples; every table/metric helper
+        # below indexes sample_results[0] or divides by counts, so skip logging
+        # entirely rather than guard each one.
+        if not sample_results:
+            self.logger.info("No newly scored samples; skipping wandb logging")
+            return
+
         # Get global metrics
         log_dict.update(self.get_global_metrics(global_results, sample_results))
 
