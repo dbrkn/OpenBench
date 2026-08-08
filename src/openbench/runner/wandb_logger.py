@@ -86,7 +86,8 @@ class WandbLogger(ABC, Generic[SampleResult]):
         # Compute global Speed Factor
         total_audio_duration = sum(sample_result.audio_duration for sample_result in sample_results)
         total_prediction_time = sum(sample_result.prediction_time for sample_result in sample_results)
-        speed_factor = total_audio_duration / total_prediction_time
+        # A fully-resumed run scores zero new samples; report 0 instead of dying.
+        speed_factor = total_audio_duration / total_prediction_time if total_prediction_time else 0.0
         global_results_dict["speed_factor"] = speed_factor
 
         with open(self.results_dir / "global_results.json", "w") as f:
