@@ -187,11 +187,19 @@ def completed_sample_ids(
     def shard_ids(shard: str) -> set[str]:
         # A filesystem per worker: HfFileSystem holds a session that is not
         # guaranteed to be thread-safe.
-        with HfFileSystem().open(shard, "rb") as handle:
-            want = [column, *match.keys()]
-            if any(c not in pq.read_schema(handle).names for c in want):
-                return set()          # rows from a run without these columns
-            table = pq.read_table(handle, columns=want)
+        # Concurrent writers commit new shards while we read: a file from the
+        # listing can 404 (or transiently fail) by the time it is opened. Losing
+        # one shard's ids only means those samples get re-scored and deduped
+        # later, so skip the shard rather than kill the whole job.
+        try:
+            with HfFileSystem().open(shard, "rb") as handle:
+                want = [column, *match.keys()]
+                if any(c not in pq.read_schema(handle).names for c in want):
+                    return set()          # rows from a run without these columns
+                table = pq.read_table(handle, columns=want)
+        except Exception as e:  # noqa: BLE001 - resume is best-effort by design
+            logger.warning(f"Skipping unreadable results shard {shard}: {e}")
+            return set()
         ids = table.column(column).to_pylist()
         cols = {mc: table.column(mc).to_pylist() for mc in match}
         return {
