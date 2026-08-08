@@ -108,6 +108,8 @@ class WandbLogger(ABC, Generic[SampleResult]):
             Dictionary mapping dataset name to wandb.Table
         """
         self.logger.info("Getting task results table")
+        if not task_results:  # fully-resumed run: nothing newly scored
+            return {}
         dataset_name = task_results[0].dataset_name
         df = pd.DataFrame([task_result.model_dump() for task_result in task_results])
 
