@@ -142,13 +142,26 @@ class SpeechGenerationResultSink:
             # single sample's audio instead of pulling the whole shard — one
             # long reference clip is already tens of MB.
             dataset.to_parquet(str(local_path), batch_size=1)
-            self._api.upload_file(
-                path_or_fileobj=str(local_path),
-                path_in_repo=f"{_DATA_DIR}/{chunk_name}",
-                repo_id=self.repo_id,
-                repo_type="dataset",
-                commit_message=f"Add {len(rows)} samples (chunk {self._chunk_index})",
-            )
+            # Transient network failures (connection resets, 5xx) must not kill a
+            # multi-hour sweep over one flush; retry with backoff before giving up.
+            import time as _time
+
+            for attempt in range(5):
+                try:
+                    self._api.upload_file(
+                        path_or_fileobj=str(local_path),
+                        path_in_repo=f"{_DATA_DIR}/{chunk_name}",
+                        repo_id=self.repo_id,
+                        repo_type="dataset",
+                        commit_message=f"Add {len(rows)} samples (chunk {self._chunk_index})",
+                    )
+                    break
+                except Exception as e:  # noqa: BLE001 - retried; re-raised on final attempt
+                    if attempt == 4:
+                        raise
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(f"Upload of {chunk_name} failed ({e}); retrying in {wait}s")
+                    _time.sleep(wait)
         logger.info(f"Uploaded {len(rows)} samples → {self.repo_id}:{_DATA_DIR}/{chunk_name}")
         self._chunk_index += 1
 
