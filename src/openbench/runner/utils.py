@@ -27,7 +27,13 @@ def get_global_results(
         detailed_result = {component: metric[component] for component in metric.components_}
         # This is how you get the confidence interval of a metric in pyannote
         # confidence interval is computed with `scipy.stats.bayes_mvs` taking only the interval for the mean
-        avg_result, (lower_bound, upper_bound) = metric.confidence_interval(alpha=0.9)
+        # A resumed run can end with fewer than 2 newly-scored samples, where
+        # pyannote refuses to compute an interval — degrade to point estimates
+        # instead of failing the whole (already uploaded) run.
+        try:
+            avg_result, (lower_bound, upper_bound) = metric.confidence_interval(alpha=0.9)
+        except Exception:  # noqa: BLE001 - too few files for an interval
+            avg_result, lower_bound, upper_bound = global_result, global_result, global_result
         global_results.append(
             GlobalResult(
                 dataset_name=dataset_name,
