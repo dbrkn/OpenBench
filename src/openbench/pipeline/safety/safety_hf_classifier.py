@@ -9,10 +9,10 @@ from typing import Callable
 from argmaxtools.utils import get_logger
 from pydantic import Field
 
-from ...dataset.dataset_text_safety import TextSafetySample
+from ...dataset.dataset_safety import SafetySample
 from ...pipeline_prediction import SafetyLabel, SafetyPrediction
 from ..base import Pipeline, PipelineType, register_pipeline
-from .common import TextSafetyConfig, TextSafetyInput, TextSafetyOutput, resolve_device
+from .common import SafetyConfig, SafetyInput, SafetyOutput, empty_text_prediction, resolve_device
 
 
 logger = get_logger(__name__)
@@ -23,7 +23,7 @@ _UNSAFE_LABEL_PATTERN = re.compile(
 )
 
 
-class HuggingFaceTextClassifierConfig(TextSafetyConfig):
+class HuggingFaceTextClassifierConfig(SafetyConfig):
     model_id: str = Field(..., description="Hub id of a model with a sequence classification head.")
     unsafe_labels: list[str] | None = Field(
         None,
@@ -74,9 +74,9 @@ class HuggingFaceTextClassifierPipeline(Pipeline):
     """
 
     _config_class = HuggingFaceTextClassifierConfig
-    pipeline_type = PipelineType.TEXT_SAFETY_CLASSIFICATION
+    pipeline_type = PipelineType.SAFETY_CLASSIFICATION
 
-    def build_pipeline(self) -> Callable[[TextSafetyInput], SafetyPrediction]:
+    def build_pipeline(self) -> Callable[[SafetyInput], SafetyPrediction]:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -91,9 +91,12 @@ class HuggingFaceTextClassifierPipeline(Pipeline):
         unsafe_ids = resolve_unsafe_label_ids(id2label, config.unsafe_labels, config.multi_label)
         logger.info(f"{config.model_id}: unsafe labels {[id2label[i] for i in unsafe_ids]} on {device}")
 
-        def classify(sample: TextSafetyInput) -> SafetyPrediction:
+        def classify(sample: SafetyInput) -> SafetyPrediction:
+            text = sample.require_text()
+            if not text.strip():
+                return empty_text_prediction()
             encoded = tokenizer(
-                sample.text, return_tensors="pt", truncation=True, max_length=config.max_length, padding=True
+                text, return_tensors="pt", truncation=True, max_length=config.max_length, padding=True
             ).to(device)
             with torch.no_grad():
                 logits = model(**encoded).logits[0].float().cpu()
@@ -114,8 +117,8 @@ class HuggingFaceTextClassifierPipeline(Pipeline):
 
         return classify
 
-    def parse_input(self, input_sample: TextSafetySample) -> TextSafetyInput:
-        return TextSafetyInput(text=input_sample.text, audio_name=input_sample.audio_name)
+    def parse_input(self, input_sample: SafetySample) -> SafetyInput:
+        return SafetyInput.from_sample(input_sample)
 
-    def parse_output(self, output: SafetyPrediction) -> TextSafetyOutput:
-        return TextSafetyOutput(prediction=output)
+    def parse_output(self, output: SafetyPrediction) -> SafetyOutput:
+        return SafetyOutput(prediction=output)

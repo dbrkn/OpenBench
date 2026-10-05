@@ -9,10 +9,17 @@ from typing import Any, Callable
 from argmaxtools.utils import get_logger
 from pydantic import Field
 
-from ...dataset.dataset_text_safety import TextSafetySample
+from ...dataset.dataset_safety import SafetySample
 from ...pipeline_prediction import SafetyPrediction
 from ..base import Pipeline, PipelineType, register_pipeline
-from .common import GuardOutputStyle, TextSafetyConfig, TextSafetyInput, TextSafetyOutput, parse_guard_verdict
+from .common import (
+    GuardOutputStyle,
+    SafetyConfig,
+    SafetyInput,
+    SafetyOutput,
+    empty_text_prediction,
+    parse_guard_verdict,
+)
 
 
 logger = get_logger(__name__)
@@ -20,7 +27,7 @@ logger = get_logger(__name__)
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0")
 
 
-class OpenAICompatibleGuardConfig(TextSafetyConfig):
+class OpenAICompatibleGuardConfig(SafetyConfig):
     model: str = Field(..., description="Model name as the endpoint knows it, e.g. `qwen3guard:4b` on Ollama.")
     base_url: str | None = Field(
         None,
@@ -48,9 +55,9 @@ class OpenAICompatibleGuardPipeline(Pipeline):
     """
 
     _config_class = OpenAICompatibleGuardConfig
-    pipeline_type = PipelineType.TEXT_SAFETY_CLASSIFICATION
+    pipeline_type = PipelineType.SAFETY_CLASSIFICATION
 
-    def build_pipeline(self) -> Callable[[TextSafetyInput], SafetyPrediction]:
+    def build_pipeline(self) -> Callable[[SafetyInput], SafetyPrediction]:
         from openai import OpenAI
 
         config = self.config
@@ -64,11 +71,14 @@ class OpenAICompatibleGuardPipeline(Pipeline):
         client = OpenAI(base_url=base_url, api_key=api_key)
         logger.info(f"{config.model} at {base_url}, output style {config.output_style}")
 
-        def classify(sample: TextSafetyInput) -> SafetyPrediction:
+        def classify(sample: SafetyInput) -> SafetyPrediction:
+            text = sample.require_text()
+            if not text.strip():
+                return empty_text_prediction()
             messages = []
             if config.system_prompt:
                 messages.append({"role": "system", "content": config.system_prompt})
-            messages.append({"role": "user", "content": config.prompt_template.format(text=sample.text)})
+            messages.append({"role": "user", "content": config.prompt_template.format(text=text)})
             response = client.chat.completions.create(
                 model=config.model,
                 messages=messages,
@@ -84,8 +94,8 @@ class OpenAICompatibleGuardPipeline(Pipeline):
 
         return classify
 
-    def parse_input(self, input_sample: TextSafetySample) -> TextSafetyInput:
-        return TextSafetyInput(text=input_sample.text, audio_name=input_sample.audio_name)
+    def parse_input(self, input_sample: SafetySample) -> SafetyInput:
+        return SafetyInput.from_sample(input_sample)
 
-    def parse_output(self, output: SafetyPrediction) -> TextSafetyOutput:
-        return TextSafetyOutput(prediction=output)
+    def parse_output(self, output: SafetyPrediction) -> SafetyOutput:
+        return SafetyOutput(prediction=output)

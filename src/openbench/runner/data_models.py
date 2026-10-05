@@ -83,7 +83,7 @@ class SpeechGenerationSampleResult(BaseSampleResult[GeneratedAudio]):
     """
 
 
-class TextSafetySampleResult(BaseSampleResult[SafetyPrediction]):
+class SafetySampleResult(BaseSampleResult[SafetyPrediction]):
     """The text safety classification result for a given sample of a dataset.
 
     The prediction carries the verdict, the unsafe score, the model's category
@@ -125,7 +125,7 @@ class GlobalResult(BaseModel):
 
 class BenchmarkResult(BaseModel):
     sample_results: list[
-        DiarizationSampleResult | TranscriptionSampleResult | SpeechGenerationSampleResult | TextSafetySampleResult
+        DiarizationSampleResult | TranscriptionSampleResult | SpeechGenerationSampleResult | SafetySampleResult
     ] = Field(..., description="The results of the samples")
     task_results: list[TaskResult] = Field(..., description="The results of the tasks")
     global_results: list[GlobalResult] = Field(..., description="The results of the global metrics")

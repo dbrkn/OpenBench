@@ -3,19 +3,21 @@
 
 """Generative guard models from the Hugging Face Hub (Llama Guard, Qwen3Guard, Granite Guardian and the like)."""
 
+import re
 from typing import Any, Callable, Literal
 
 from argmaxtools.utils import get_logger
 from pydantic import Field
 
-from ...dataset.dataset_text_safety import TextSafetySample
-from ...pipeline_prediction import SafetyPrediction
+from ...dataset.dataset_safety import SafetySample
+from ...pipeline_prediction import SafetyLabel, SafetyPrediction
 from ..base import Pipeline, PipelineType, register_pipeline
 from .common import (
     GuardOutputStyle,
-    TextSafetyConfig,
-    TextSafetyInput,
-    TextSafetyOutput,
+    SafetyConfig,
+    SafetyInput,
+    SafetyOutput,
+    empty_text_prediction,
     parse_guard_verdict,
     resolve_device,
 )
@@ -24,7 +26,7 @@ from .common import (
 logger = get_logger(__name__)
 
 
-class HuggingFaceGuardModelConfig(TextSafetyConfig):
+class HuggingFaceGuardModelConfig(SafetyConfig):
     model_id: str = Field(..., description="Hub id of a causal language model trained as a safety guard.")
     system_prompt: str | None = Field(None, description="Optional system message.")
     prompt_template: str = Field(
@@ -40,6 +42,10 @@ class HuggingFaceGuardModelConfig(TextSafetyConfig):
         description="Build the prompt with `AutoProcessor` instead of `AutoTokenizer` (multimodal guards such as Llama Guard 4).",
     )
     output_style: GuardOutputStyle = Field("auto", description="How to read the generated verdict.")
+    controversial_is_unsafe: bool = Field(
+        True,
+        description="Qwen3Guard's middle tier counts as unsafe (the paper's choice); False counts it as safe.",
+    )
     max_new_tokens: int = Field(64, description="Generation budget; verdicts are short.")
     score_mode: Literal["label", "first_token"] = Field(
         "label",
@@ -76,9 +82,9 @@ class HuggingFaceGuardModelPipeline(Pipeline):
     """
 
     _config_class = HuggingFaceGuardModelConfig
-    pipeline_type = PipelineType.TEXT_SAFETY_CLASSIFICATION
+    pipeline_type = PipelineType.SAFETY_CLASSIFICATION
 
-    def build_pipeline(self) -> Callable[[TextSafetyInput], SafetyPrediction]:
+    def build_pipeline(self) -> Callable[[SafetyInput], SafetyPrediction]:
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer
 
@@ -99,11 +105,14 @@ class HuggingFaceGuardModelPipeline(Pipeline):
         safe_ids = _first_token_ids(tokenizer, config.safe_tokens)
         logger.info(f"{config.model_id} on {device}, output style {config.output_style}")
 
-        def classify(sample: TextSafetyInput) -> SafetyPrediction:
+        def classify(sample: SafetyInput) -> SafetyPrediction:
+            text = sample.require_text()
+            if not text.strip():
+                return empty_text_prediction()
             messages = []
             if config.system_prompt:
                 messages.append({"role": "system", "content": config.system_prompt})
-            messages.append({"role": "user", "content": config.prompt_template.format(text=sample.text)})
+            messages.append({"role": "user", "content": config.prompt_template.format(text=text)})
             inputs = templater.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
@@ -122,6 +131,8 @@ class HuggingFaceGuardModelPipeline(Pipeline):
             prompt_length = inputs["input_ids"].shape[1]
             output = tokenizer.decode(generated.sequences[0][prompt_length:], skip_special_tokens=True)
             label, category = parse_guard_verdict(output, config.output_style)
+            if not config.controversial_is_unsafe and re.search(r"safety:\s*controversial", output, re.IGNORECASE):
+                label = SafetyLabel.SAFE
             if config.score_mode == "first_token" and generated.scores:
                 probabilities = torch.softmax(generated.scores[0][0].float(), dim=-1)
                 unsafe_mass = float(probabilities[unsafe_ids].sum()) if unsafe_ids else 0.0
@@ -134,8 +145,8 @@ class HuggingFaceGuardModelPipeline(Pipeline):
 
         return classify
 
-    def parse_input(self, input_sample: TextSafetySample) -> TextSafetyInput:
-        return TextSafetyInput(text=input_sample.text, audio_name=input_sample.audio_name)
+    def parse_input(self, input_sample: SafetySample) -> SafetyInput:
+        return SafetyInput.from_sample(input_sample)
 
-    def parse_output(self, output: SafetyPrediction) -> TextSafetyOutput:
-        return TextSafetyOutput(prediction=output)
+    def parse_output(self, output: SafetyPrediction) -> SafetyOutput:
+        return SafetyOutput(prediction=output)

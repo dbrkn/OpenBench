@@ -26,7 +26,7 @@
   - [Precision](#precision)
   - [Recall](#recall)
   - [F-score](#f-score)
-- [Text Safety Classification](#text-safety-classification)
+- [Safety Classification](#safety-classification)
   - [Benchmarked Systems](#benchmarked-systems-5)
   - [Benchmarked Datasets](#benchmarked-datasets-4)
   - [Recall, Precision, F1, ROC-AUC](#recall-precision-f1-roc-auc)
@@ -687,24 +687,39 @@ F1 = 2 × (0.75 × 0.6) / (0.75 + 0.6) = **66.7%**, reflecting the model's overa
 
 <br/>
 
-# Text Safety Classification
+# Safety Classification
 
-Binary safe/unsafe classification of user prompts by safety guard models, following
-[Benchmarking Open-Source Safety Guard Models: A Comprehensive Evaluation](https://arxiv.org/abs/2605.28830)
-(Harsh, Sarmah and Pasquali, 2026). Recall on the unsafe class is the primary metric: a missed unsafe
-prompt costs more than a false alarm.
+Binary safe/unsafe classification of utterances, as text or as speech, by the three classifiers Sova depends on:
+the Roblox PII classifier v2 and the Roblox voice safety classifier v3 as Sova ships them (axon's Core ML
+conversions), and Qwen3Guard-Gen-0.6B. Recall on the unsafe class is the primary metric: a missed unsafe
+utterance costs more than a false alarm. Every pipeline maps its own heads onto safe/unsafe (any head firing
+is unsafe); low recall on a category a model was never trained for is a finding, not a bug.
 
 ## Benchmarked Systems
 
 <details>
 <summary>Click to expand</summary>
 
-### PoliteGuard
+### Roblox PII classifier v2 (Core ML)
 - **Latest Run:** `2026-10-05`
-- **Model Version:** `Intel/polite-guard` (BERT-base, 110M); `impolite` counts as unsafe, as in the paper
-- **Configuration:** `openbench-cli evaluate -p polite-guard -d safety-guard-bench-mini -m recall -m precision -m f1 -m accuracy -m mcc -m roc_auc -m category_recall`
-- **Code Reference:** [openbench/pipeline/text_safety/text_safety_hf_classifier.py](https://github.com/argmaxinc/OpenBench/blob/main/src/openbench/pipeline/text_safety/text_safety_hf_classifier.py)
-- **Hardware**: Apple Silicon Mac (MPS)
+- **Model Version:** `Roblox/roblox-pii-classifier-v2`, axon W8A16 conversion, Sova's bundle; unsafe when asking (0.60), giving (0.55) or off-platform (0.10) fires (model-card thresholds); the text is the lone turn of speaker `t`
+- **Configuration:** `openbench-cli evaluate -p roblox-pii-coreml -d <dataset> -m recall -m precision -m f1 -m accuracy -m mcc -m roc_auc -m category_recall`
+- **Code Reference:** [openbench/pipeline/safety/safety_coreml_roblox_pii.py](https://github.com/argmaxinc/OpenBench/blob/main/src/openbench/pipeline/safety/safety_coreml_roblox_pii.py)
+- **Hardware**: Apple Silicon Mac, CPU and Neural Engine
+
+### Roblox voice safety classifier v3 (Core ML)
+- **Latest Run:** `2026-10-05`
+- **Model Version:** `Roblox/voice-safety-classifier-v3`, axon W16A16 conversion, Sova's bundle; one 15 s window (the last 15 s of a longer clip, zero-padded); `roblox-voice-safety-coreml` fires on any of the 8 heads at 0.5, `-sova` only on the four heads Sova's ladder reads at its bars
+- **Configuration:** `openbench-cli evaluate -p roblox-voice-safety-coreml -d <dataset> ...`
+- **Code Reference:** [openbench/pipeline/safety/safety_coreml_roblox_voice.py](https://github.com/argmaxinc/OpenBench/blob/main/src/openbench/pipeline/safety/safety_coreml_roblox_voice.py)
+- **Hardware**: Apple Silicon Mac, CPU and Neural Engine
+
+### Qwen3Guard-Gen-0.6B
+- **Latest Run:** `2026-10-05`
+- **Model Version:** `Qwen/Qwen3Guard-Gen-0.6B` from the Hub, greedy decoding, prompt moderation through its chat template; `Controversial` counts as unsafe
+- **Configuration:** `openbench-cli evaluate -p qwen3guard-gen-0.6b -d <dataset> ...`
+- **Code Reference:** [openbench/pipeline/safety/safety_hf_guard.py](https://github.com/argmaxinc/OpenBench/blob/main/src/openbench/pipeline/safety/safety_hf_guard.py)
+- **Hardware**: Apple Silicon Mac (PyTorch)
 
 </details>
 
@@ -713,15 +728,20 @@ prompt costs more than a false alarm.
 <details>
 <summary>Click to expand</summary>
 
+### detoxy
+- **Language:** English
+- **Domain:** Read and acted speech (VCTK, LJSpeech, Common Voice, MELD) labeled hate / non-hate, the Dynamic-SUPERB packaging of Detoxy
+- **Description:** 603 clips; the text classifiers read openai-whisper `small` transcripts of the same clips
+
+### mutox-en
+- **Language:** English
+- **Domain:** Podcast and web speech segments with MuTox's toxicity labels and types (hate speech, slurs, pornographic language, physical violence or bullying language, profanities)
+- **Description:** the first 1,000 English clips of the public audio mirror (MuTox train partition); the text classifiers read MuTox's human transcripts (`mutox-en`) or whisper transcripts (`mutox-en-asr`)
+
 ### safety-guard-bench
 - **Language:** English
-- **Domain:** User prompts: adversarial behaviors (HarmBench, 103), forbidden prompts (StrongREJECT, 154), web sentences with Perspective API scores (RealToxicityPrompts, 67,521, the only source of safe prompts) and human-annotated prompts (BeaverTails 30k train, 11,553)
-- **Description:** 79,331 prompts, 54.7% unsafe, under 8 NIST AI RMF SAFETY subcategories. Rebuilt from the original repositories at load time by `openbench.dataset.safety_guard_benchmark`; the sample sets and labels match the paper's Table 1 exactly, the per-category counts match its Table 10 for harassment, threats, profanity and suicide/self-harm exactly and the other categories to within 35 rows (the paper does not state how multi-label BeaverTails rows get one category)
-
-### safety-guard-bench-mini
-- **Language:** English
-- **Domain:** Same as above
-- **Description:** A seeded random 250 prompts per source (757 in total: 103 + 154 + 250 + 250), 628 unsafe and 129 safe. Fast to run on a laptop; its class balance differs from the full benchmark, so its precision and accuracy are not comparable with the paper's
+- **Domain:** Text prompts: adversarial behaviors (HarmBench, 103), forbidden prompts (StrongREJECT, 154), web sentences with Perspective API scores (RealToxicityPrompts, 67,521, the only source of safe prompts) and human-annotated prompts (BeaverTails 30k train, 11,553)
+- **Description:** 79,331 prompts, 54.7% unsafe, under 8 NIST AI RMF SAFETY subcategories, from arXiv:2605.28830. Rebuilt from the original repositories at load time; the sample sets and labels match the paper's Table 1 exactly and its per-category counts to within 35 rows. Text only, so the voice classifier needs a TTS rendering, which is wired but not yet run
 
 </details>
 
@@ -730,17 +750,50 @@ prompt costs more than a false alarm.
 <details>
 <summary>Click to expand</summary>
 
-**What they measure:** With `unsafe` as the positive class, recall is the share of unsafe prompts flagged, precision the share of flagged prompts that are unsafe, F1 their harmonic mean, accuracy the share of correct verdicts and MCC the correlation between reference and predicted verdicts. ROC-AUC ranks the model's unsafe score; a model that emits only a verdict gets the balanced accuracy of its hard verdicts. `category_recall` is the macro average of the recall per reference category, with each category's counts in the detailed result.
+**What they measure:** With `unsafe` as the positive class, recall is the share of unsafe utterances flagged, precision the share of flagged utterances that are unsafe, F1 their harmonic mean, accuracy the share of correct verdicts and MCC the correlation between reference and predicted verdicts. ROC-AUC ranks the model's unsafe score (for the Core ML pipelines the maximum over heads after shifting each head so its threshold maps to 0.5); a model that emits only a verdict gets the balanced accuracy of its hard verdicts. `category_recall` is the macro average of the recall per reference category, with each category's counts in the detailed result.
 
-**How to interpret:** The always-unsafe baseline has recall 1.0 and the precision of the dataset's unsafe share, so a guard model is only useful above that F1. The paper ranks models by recall and finds that larger guard models are often the most conservative.
+**How to interpret:** The always-unsafe baseline has recall 1.0 and the precision of the dataset's unsafe share, so a classifier is only useful above that F1. The Roblox PII classifier answers "is this speaker asking for or giving personal details"; the voice classifier answers Roblox's community-standards questions; neither was trained for the hate-speech question these two sets ask, so their recall here bounds what Sova would hear of such speech, not the models' quality on their own task.
 
 </details>
 
-Results on `safety-guard-bench-mini` (757 prompts); the full benchmark is `-d safety-guard-bench`.
+Results of 2026-10-05 on an Apple Silicon Mac. The text models read Detoxy through openai-whisper `small`
+transcripts (6 of 603 came back empty and count as safe) and MuTox through its human transcripts, so the
+MuTox columns of the text models carry no ASR error. Both sets ask a hate-speech or toxicity question that
+only Qwen3Guard was trained for; the Roblox PII classifier's zero recall is the expected answer of a model
+that only detects personal-information exchange, and the voice classifier's recall shows which of its heads
+overlap with these labels (profanity 0.67, hate speech 0.41 on MuTox with every head read; 0.04 to 0.21 when
+read the way Sova's ladder reads it, which ignores profanity and discriminatory speech by design).
+**detoxy (603 clips, 148 unsafe)**
 
-| System<br/>(model) | Recall | Precision | F1 | Accuracy | MCC | ROC-AUC | Category recall |
+| System | Recall | Precision | F1 | Accuracy | MCC | ROC-AUC | Category recall |
 |---|---|---|---|---|---|---|---|
-| PoliteGuard<br/>(Intel/polite-guard) | 0.393 | 0.829 | 0.533 | 0.429 | -0.002 | 0.493 | 0.462 |
-| Always unsafe<br/>(baseline) | 1.000 | 0.830 | 0.907 | 0.830 | - | 0.500 | 1.000 |
+| Roblox PII v2<br/>(Core ML, text) | 0.000 | 0.000 | 0.000 | 0.720 | -0.108 | 0.445 | 0.000 |
+| Roblox voice safety v3<br/>(Core ML, any head at 0.5) | 0.142 | 0.636 | 0.232 | 0.769 | 0.219 | 0.615 | 0.142 |
+| Roblox voice safety v3<br/>(Core ML, Sova's heads and bars) | 0.095 | 0.700 | 0.167 | 0.768 | 0.196 | 0.745 | 0.095 |
+| Qwen3Guard-Gen-0.6B<br/>(text) | 0.601 | 0.484 | 0.536 | 0.745 | 0.367 | 0.696 | 0.601 |
+| Always unsafe<br/>(baseline) | 1.000 | 0.245 | 0.394 | 0.245 | - | 0.500 | 1.000 |
+
+**mutox-en (1,000 clips, 148 unsafe; human transcripts for the text models)**
+
+| System | Recall | Precision | F1 | Accuracy | MCC | ROC-AUC | Category recall |
+|---|---|---|---|---|---|---|---|
+| Roblox PII v2<br/>(Core ML, text) | 0.000 | 0.000 | 0.000 | 0.846 | -0.032 | 0.661 | 0.000 |
+| Roblox voice safety v3<br/>(Core ML, any head at 0.5) | 0.318 | 0.341 | 0.329 | 0.808 | 0.217 | 0.666 | 0.347 |
+| Roblox voice safety v3<br/>(Core ML, Sova's heads and bars) | 0.088 | 0.157 | 0.113 | 0.795 | 0.007 | 0.641 | 0.110 |
+| Qwen3Guard-Gen-0.6B<br/>(text) | 0.838 | 0.200 | 0.322 | 0.479 | 0.186 | 0.627 | 0.851 |
+| Always unsafe<br/>(baseline) | 1.000 | 0.148 | 0.258 | 0.148 | - | 0.500 | 1.000 |
+
+**Recall per reference category** (share of unsafe clips flagged; n = clips in the category)
+
+| System | Detoxy hate speech (148) | MuTox harassment (56) | MuTox hate speech (37) | MuTox profanity (36) | MuTox sexual content (19) |
+|---|---|---|---|---|---|
+| Roblox PII v2 (text) | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Roblox voice safety v3 (any head at 0.5) | 0.14 | 0.05 | 0.41 | 0.67 | 0.26 |
+| Roblox voice safety v3 (Sova's heads and bars) | 0.09 | 0.04 | 0.08 | 0.11 | 0.21 |
+| Qwen3Guard-Gen-0.6B (text) | 0.60 | 0.79 | 0.95 | 0.78 | 0.89 |
+
+Not yet run: the voice classifier on `safety-guard-bench` (text only, needs the TTS rendering), the full
+`safety-guard-bench` for the two text models, and `mutox-en-asr` (whisper transcripts instead of human ones).
+
 
 <br/><br/>

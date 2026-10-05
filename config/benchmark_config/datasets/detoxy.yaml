@@ -1,0 +1,6 @@
+detoxy:
+  dataset_id: detoxy
+  split: test
+  loader: openbench.dataset.audio_safety_benchmarks:load_detoxy
+  loader_kwargs:
+    asr: whisper:small

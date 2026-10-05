@@ -6,14 +6,14 @@
 import pytest
 
 from openbench.metric import MetricOptions, MetricRegistry
-from openbench.metric.text_safety_metrics import (
-    TextSafetyAccuracy,
-    TextSafetyCategoryRecall,
-    TextSafetyF1,
-    TextSafetyMCC,
-    TextSafetyPrecision,
-    TextSafetyRecall,
-    TextSafetyROCAUC,
+from openbench.metric.safety_metrics import (
+    SafetyAccuracy,
+    SafetyCategoryRecall,
+    SafetyF1,
+    SafetyMCC,
+    SafetyPrecision,
+    SafetyRecall,
+    SafetyROCAUC,
 )
 from openbench.pipeline_prediction import SafetyLabel, SafetyPrediction
 from openbench.types import PipelineType
@@ -44,41 +44,41 @@ def run(metric, cases=CASES):
 
 
 def test_recall_precision_f1_accuracy_mcc_from_summed_counts():
-    assert run(TextSafetyRecall())[0] == pytest.approx(2 / 3)
-    assert run(TextSafetyPrecision())[0] == pytest.approx(2 / 3)
-    assert run(TextSafetyF1())[0] == pytest.approx(2 / 3)
-    assert run(TextSafetyAccuracy())[0] == pytest.approx(4 / 6)
+    assert run(SafetyRecall())[0] == pytest.approx(2 / 3)
+    assert run(SafetyPrecision())[0] == pytest.approx(2 / 3)
+    assert run(SafetyF1())[0] == pytest.approx(2 / 3)
+    assert run(SafetyAccuracy())[0] == pytest.approx(4 / 6)
     expected_mcc = (2 * 2 - 1 * 1) / ((2 + 1) * (2 + 1) * (2 + 1) * (2 + 1)) ** 0.5
-    assert run(TextSafetyMCC())[0] == pytest.approx(expected_mcc)
+    assert run(SafetyMCC())[0] == pytest.approx(expected_mcc)
 
 
 def test_per_sample_values_are_none_when_undefined():
-    _, per_sample = run(TextSafetyRecall())
+    _, per_sample = run(SafetyRecall())
     assert [r["recall"] for r in per_sample] == [1.0, 1.0, 0.0, None, None, None]
-    _, per_sample = run(TextSafetyPrecision())
+    _, per_sample = run(SafetyPrecision())
     assert [r["precision"] for r in per_sample] == [1.0, 1.0, None, 0.0, None, None]
-    _, per_sample = run(TextSafetyMCC())
+    _, per_sample = run(SafetyMCC())
     assert all(r["mcc"] is None for r in per_sample)
 
 
 def test_confidence_interval_skips_undefined_samples():
-    metric = TextSafetyRecall()
+    metric = SafetyRecall()
     run(metric)
     center, (lower, upper) = metric.confidence_interval()
     assert center == pytest.approx(2 / 3)
     assert lower <= center <= upper
-    empty = TextSafetyRecall()
+    empty = SafetyRecall()
     assert empty.confidence_interval() == (None, (None, None))
 
 
 def test_global_value_is_none_without_positives():
-    metric = TextSafetyRecall()
+    metric = SafetyRecall()
     metric(reference=ref(False), hypothesis=hyp(False))
     assert abs(metric) is None
 
 
 def test_roc_auc_ranks_scores_and_resets():
-    metric = TextSafetyROCAUC()
+    metric = SafetyROCAUC()
     global_value, per_sample = run(metric)
     # unsafe scores 0.9, 0.7, 0.4 against safe scores 0.6, 0.2, 0.1 -> 8 of 9 pairs ordered correctly
     assert global_value == pytest.approx(8 / 9)
@@ -91,7 +91,7 @@ def test_roc_auc_ranks_scores_and_resets():
 
 
 def test_roc_auc_falls_back_to_hard_verdicts():
-    metric = TextSafetyROCAUC()
+    metric = SafetyROCAUC()
     for r, h in CASES:
         metric(reference=r, hypothesis=hyp(h.is_unsafe))
     assert metric["scored_samples"] == 0
@@ -99,10 +99,10 @@ def test_roc_auc_falls_back_to_hard_verdicts():
 
 
 def test_category_recall_macro_average_and_buckets():
-    metric = TextSafetyCategoryRecall()
+    metric = SafetyCategoryRecall()
     cases = CASES + [(ref(True, "made_up"), hyp(False)), (ref(True), hyp(True))]
     global_value, _ = run(metric, cases)
-    recalls = TextSafetyCategoryRecall.recall_per_category(metric.accumulated_)
+    recalls = SafetyCategoryRecall.recall_per_category(metric.accumulated_)
     assert recalls == {"violence": 1.0, "threats": 0.5, "other": 0.0, "uncategorized": 1.0}
     assert global_value == pytest.approx((1.0 + 0.5 + 0.0 + 1.0) / 4)
     assert metric["true_positives__violence"] == 1
@@ -110,7 +110,7 @@ def test_category_recall_macro_average_and_buckets():
 
 
 def test_metrics_are_registered_for_the_task():
-    available = set(MetricRegistry.get_available_metrics(PipelineType.TEXT_SAFETY_CLASSIFICATION))
+    available = set(MetricRegistry.get_available_metrics(PipelineType.SAFETY_CLASSIFICATION))
     assert available == {
         MetricOptions.RECALL,
         MetricOptions.PRECISION,
@@ -120,5 +120,5 @@ def test_metrics_are_registered_for_the_task():
         MetricOptions.ROC_AUC,
         MetricOptions.CATEGORY_RECALL,
     }
-    metric = MetricRegistry.get_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.F1)
-    assert isinstance(metric, TextSafetyF1)
+    metric = MetricRegistry.get_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.F1)
+    assert isinstance(metric, SafetyF1)

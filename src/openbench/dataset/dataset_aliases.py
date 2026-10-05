@@ -657,7 +657,7 @@ def register_dataset_aliases() -> None:
     DatasetRegistry.register_alias(
         "safety-guard-bench",
         DatasetConfig(dataset_id="safety-guard-bench", split="test", loader=safety_guard_loader),
-        supported_pipeline_types={PipelineType.TEXT_SAFETY_CLASSIFICATION},
+        supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
         description=(
             "Safety guard benchmark (arXiv:2605.28830): 79,331 prompts from HarmBench, StrongREJECT, "
             "RealToxicityPrompts and BeaverTails labeled safe/unsafe under 8 NIST safety categories."
@@ -671,7 +671,7 @@ def register_dataset_aliases() -> None:
             loader=safety_guard_loader,
             loader_kwargs={"max_samples_per_source": 250, "seed": 0},
         ),
-        supported_pipeline_types={PipelineType.TEXT_SAFETY_CLASSIFICATION},
+        supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
         description="Safety guard benchmark capped at a seeded random 250 prompts per source (at most 1,000).",
     )
     for source, label in [
@@ -688,9 +688,60 @@ def register_dataset_aliases() -> None:
                 loader=safety_guard_loader,
                 loader_kwargs={"sources": [source]},
             ),
-            supported_pipeline_types={PipelineType.TEXT_SAFETY_CLASSIFICATION},
+            supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
             description=f"Safety guard benchmark, one source. {label}.",
         )
+
+    # Speech toxicity sets, loaded from their original repositories; see
+    # `openbench.dataset.audio_safety_benchmarks`. `asr` fills `text` for the text classifiers.
+    audio_loader = "openbench.dataset.audio_safety_benchmarks"
+    DatasetRegistry.register_alias(
+        "detoxy",
+        DatasetConfig(
+            dataset_id="detoxy",
+            split="test",
+            loader=f"{audio_loader}:load_detoxy",
+            loader_kwargs={"asr": "whisper:small"},
+        ),
+        supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
+        description=(
+            "Detoxy hate speech: 603 English clips (VCTK, LJSpeech, Common Voice, MELD) labeled hate / non-hate; "
+            "transcribed once with openai-whisper `small` for the text classifiers (`asr=argmax-cli` for WhisperKit)."
+        ),
+    )
+    DatasetRegistry.register_alias(
+        "detoxy-audio-only",
+        DatasetConfig(
+            dataset_id="detoxy", split="test", loader=f"{audio_loader}:load_detoxy", loader_kwargs={"asr": None}
+        ),
+        supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
+        description="Detoxy without a transcription pass, for audio pipelines only.",
+    )
+    DatasetRegistry.register_alias(
+        "mutox-en",
+        DatasetConfig(
+            dataset_id="mutox-en",
+            split="test",
+            loader=f"{audio_loader}:load_mutox",
+            loader_kwargs={"max_samples": 1000, "asr": "reference"},
+        ),
+        supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
+        description=(
+            "MuTox English: the first 1,000 clips of the audio mirror with MuTox's toxicity labels and types; "
+            "`text` is the human transcript, so the text classifiers see no ASR errors."
+        ),
+    )
+    DatasetRegistry.register_alias(
+        "mutox-en-asr",
+        DatasetConfig(
+            dataset_id="mutox-en",
+            split="test",
+            loader=f"{audio_loader}:load_mutox",
+            loader_kwargs={"max_samples": 1000, "asr": "whisper:small"},
+        ),
+        supported_pipeline_types={PipelineType.SAFETY_CLASSIFICATION},
+        description="MuTox English, same clips, `text` transcribed with openai-whisper `small` (ASR errors included).",
+    )
 
     # Local dataset to use with env variables to override with env vars
     # and allow easy testing of local datasets

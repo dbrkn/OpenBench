@@ -19,9 +19,9 @@ from .data_models import (
     BaseSampleResult,
     DiarizationSampleResult,
     GlobalResult,
+    SafetySampleResult,
     SpeechGenerationSampleResult,
     TaskResult,
-    TextSafetySampleResult,
     TranscriptionSampleResult,
 )
 
@@ -379,7 +379,7 @@ class SpeechGenerationWandbLogger(WandbLogger[SpeechGenerationSampleResult]):
         return {}
 
 
-class TextSafetyWandbLogger(WandbLogger[TextSafetySampleResult]):
+class SafetyWandbLogger(WandbLogger[SafetySampleResult]):
     """Logger for text safety classification results.
 
     Adds the global confusion matrix, summed from the per-sample components of
@@ -389,7 +389,7 @@ class TextSafetyWandbLogger(WandbLogger[TextSafetySampleResult]):
 
     CONFUSION_COMPONENTS = ("true_positives", "false_positives", "false_negatives", "true_negatives")
 
-    def get_sample_results_table(self, sample_results: list[TextSafetySampleResult]) -> dict[str, wandb.Table]:
+    def get_sample_results_table(self, sample_results: list[SafetySampleResult]) -> dict[str, wandb.Table]:
         """Flatten the verdict into plain columns; a nested prediction with enums and optional fields breaks wandb tables."""
         self.logger.info("Creating sample results table")
         rows = []
@@ -416,12 +416,12 @@ class TextSafetyWandbLogger(WandbLogger[TextSafetySampleResult]):
         self,
         global_results: list[GlobalResult],
         task_results: list[TaskResult],
-        sample_results: list[TextSafetySampleResult],
+        sample_results: list[SafetySampleResult],
     ) -> dict[str, Any]:
         logs: dict[str, Any] = {}
         for global_result in global_results:
             detail = global_result.detailed_result or {}
-            prefix = f"{global_result.dataset_name}/text_safety"
+            prefix = f"{global_result.dataset_name}/safety"
             if (
                 all(component in detail for component in self.CONFUSION_COMPONENTS)
                 and f"{prefix}/true_positives" not in logs
@@ -429,8 +429,8 @@ class TextSafetyWandbLogger(WandbLogger[TextSafetySampleResult]):
                 for component in self.CONFUSION_COMPONENTS:
                     logs[f"{prefix}/{component}"] = detail[component]
             if global_result.metric_name == "category_recall":
-                from ..metric.text_safety_metrics import TextSafetyCategoryRecall
+                from ..metric.safety_metrics import SafetyCategoryRecall
 
-                for category, recall in TextSafetyCategoryRecall.recall_per_category(detail).items():
+                for category, recall in SafetyCategoryRecall.recall_per_category(detail).items():
                     logs[f"{prefix}/recall/{category}"] = recall
         return logs

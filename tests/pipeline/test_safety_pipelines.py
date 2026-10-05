@@ -8,11 +8,11 @@ import tempfile
 import numpy as np
 import pytest
 
-from openbench.dataset import DatasetConfig, TextSafetySample
+from openbench.dataset import DatasetConfig, SafetySample
 from openbench.metric import MetricOptions
 from openbench.pipeline import PipelineRegistry
-from openbench.pipeline.text_safety import ConstantTextSafetyPipeline, parse_guard_verdict
-from openbench.pipeline.text_safety.text_safety_hf_classifier import resolve_unsafe_label_ids
+from openbench.pipeline.safety import ConstantSafetyPipeline, parse_guard_verdict
+from openbench.pipeline.safety.safety_hf_classifier import resolve_unsafe_label_ids
 from openbench.pipeline_prediction import SafetyLabel, SafetyPrediction
 from openbench.runner import BenchmarkConfig, BenchmarkRunner, WandbConfig
 
@@ -25,7 +25,12 @@ from openbench.runner import BenchmarkConfig, BenchmarkRunner, WandbConfig
         ("Safety: Controversial\nCategories: Violent", "qwen3guard", SafetyLabel.UNSAFE, "Violent"),
         ("Safety: Safe\nCategories: None", "qwen3guard", SafetyLabel.SAFE, "None"),
         ("Harmful request: yes\nResponse refusal: no", "wildguard", SafetyLabel.UNSAFE, None),
-        ('{"User Safety": "unsafe", "Safety Categories": "Violence, Threat"}', "json", SafetyLabel.UNSAFE, "Violence, Threat"),
+        (
+            '{"User Safety": "unsafe", "Safety Categories": "Violence, Threat"}',
+            "json",
+            SafetyLabel.UNSAFE,
+            "Violence, Threat",
+        ),
         ('Verdict: {"label": "safe", "rationale": "benign"}', "auto", SafetyLabel.SAFE, None),
         ("Yes", "yes_no", SafetyLabel.UNSAFE, None),
         ("No.", "auto", SafetyLabel.SAFE, None),
@@ -50,8 +55,8 @@ def test_resolve_unsafe_label_ids():
 
 
 def test_constant_pipeline_runs_on_a_sample():
-    pipeline = ConstantTextSafetyPipeline.from_dict({"label": "safe"})
-    sample = TextSafetySample(
+    pipeline = ConstantSafetyPipeline.from_dict({"label": "safe"})
+    sample = SafetySample(
         audio_name="x",
         waveform=np.zeros(1, dtype=np.float32),
         sample_rate=16000,
@@ -67,7 +72,7 @@ def test_constant_pipeline_runs_on_a_sample():
 def test_alias_overrides_and_pipeline_type():
     pipeline = PipelineRegistry.create_pipeline("constant-unsafe", {"label": "safe"})
     assert pipeline.config.label == SafetyLabel.SAFE
-    assert PipelineRegistry.get_pipeline_type("polite-guard").value == "text_safety_classification"
+    assert PipelineRegistry.get_pipeline_type("roblox-pii-coreml").value == "safety_classification"
 
 
 @pytest.fixture
@@ -97,11 +102,9 @@ def test_benchmark_runner_end_to_end_with_constant_pipeline(loader_module):
                 MetricOptions.ROC_AUC: {},
                 MetricOptions.CATEGORY_RECALL: {},
             },
-            datasets={
-                "three": DatasetConfig(dataset_id="three", loader=loader_module)
-            },
+            datasets={"three": DatasetConfig(dataset_id="three", loader=loader_module)},
         )
-        pipeline = ConstantTextSafetyPipeline.from_dict({"label": "unsafe", "out_dir": tmp})
+        pipeline = ConstantSafetyPipeline.from_dict({"label": "unsafe", "out_dir": tmp})
         results = BenchmarkRunner(config, [pipeline]).run()
         by_name = {g.metric_name: g for g in results.global_results}
         assert by_name["recall"].global_result == pytest.approx(1.0)

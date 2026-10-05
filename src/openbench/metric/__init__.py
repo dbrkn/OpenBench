@@ -8,6 +8,15 @@ from .keyword_boosting_metrics.boosting_metrics import (
 )
 from .metric import MetricOptions
 from .registry import MetricRegistry
+from .safety_metrics import (
+    SafetyAccuracy,
+    SafetyCategoryRecall,
+    SafetyF1,
+    SafetyMCC,
+    SafetyPrecision,
+    SafetyRecall,
+    SafetyROCAUC,
+)
 from .speaker_count_metrics import (
     SpeakerCountAccuracy,
     SpeakerCountingErrorRate,
@@ -21,15 +30,6 @@ from .streaming_latency_metrics import (
     NumInsertions,
     NumSubstitutions,
     StreamingLatency,
-)
-from .text_safety_metrics import (
-    TextSafetyAccuracy,
-    TextSafetyCategoryRecall,
-    TextSafetyF1,
-    TextSafetyMCC,
-    TextSafetyPrecision,
-    TextSafetyRecall,
-    TextSafetyROCAUC,
 )
 from .word_error_metrics import (
     ConcatenatedMinimumPermutationWER,

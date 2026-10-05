@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from datasets import Dataset, DatasetDict, DatasetInfo, NamedSplit
 
-from openbench.dataset import DatasetConfig, TextSafetyDataset, parse_safety_label
+from openbench.dataset import DatasetConfig, SafetyDataset, parse_safety_label
 from openbench.pipeline_prediction import SafetyLabel
 
 
@@ -45,7 +45,7 @@ def test_parse_safety_label_rejects_unknown():
 
 
 def test_samples_carry_text_label_and_category():
-    dataset = TextSafetyDataset(make_dataset())
+    dataset = SafetyDataset(make_dataset())
     assert len(dataset) == 3
     first, second, third = dataset[0], dataset[1], dataset[2]
     assert first.text == "have a nice day"
@@ -60,7 +60,7 @@ def test_samples_carry_text_label_and_category():
 
 def test_missing_columns_are_rejected():
     with pytest.raises(Exception):
-        TextSafetyDataset(Dataset.from_list([{"text": "x"}]))
+        SafetyDataset(Dataset.from_list([{"text": "x"}]))
 
 
 def test_dataset_config_loads_save_to_disk_directories():

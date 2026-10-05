@@ -8,7 +8,7 @@ from .dataset_orchestration import OrchestrationDataset, OrchestrationSample
 from .dataset_registry import DatasetRegistry
 from .dataset_speech_generation import SpeechGenerationDataset, SpeechGenerationSample
 from .dataset_streaming_transcription import StreamingDataset, StreamingSample
-from .dataset_text_safety import TextSafetyDataset, TextSafetySample, parse_safety_label
+from .dataset_safety import SafetyDataset, SafetySample, parse_safety_label
 from .dataset_transcription import TranscriptionDataset, TranscriptionSample
 
 # Import dataset aliases to register them
@@ -27,14 +27,14 @@ __all__ = [
     "StreamingDataset",
     "OrchestrationDataset",
     "SpeechGenerationDataset",
-    "TextSafetyDataset",
+    "SafetyDataset",
     # Sample types
     "DiarizationSample",
     "TranscriptionSample",
     "StreamingSample",
     "OrchestrationSample",
     "SpeechGenerationSample",
-    "TextSafetySample",
+    "SafetySample",
     # Helpers
     "parse_safety_label",
     # Registry

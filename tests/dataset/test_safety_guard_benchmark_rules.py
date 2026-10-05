@@ -11,7 +11,7 @@ from openbench.dataset import safety_guard_benchmark as sgb
 
 
 def scores(**overrides):
-    base = {d: 0.1 for d in sgb.PERSPECTIVE_DIMENSIONS}
+    base = dict.fromkeys(sgb.PERSPECTIVE_DIMENSIONS, 0.1)
     base.update(overrides)
     return base
 
@@ -29,7 +29,7 @@ def test_rtp_safe_at_exactly_half():
 
 def test_rtp_flirtation_dominant_rows_are_dropped_only_when_both_sides_scored():
     assert sgb.realtoxicityprompts_verdict(scores(flirtation=0.8), scores(flirtation=0.7)) is None
-    unscored = {d: None for d in sgb.PERSPECTIVE_DIMENSIONS}
+    unscored = dict.fromkeys(sgb.PERSPECTIVE_DIMENSIONS)
     label, category, _ = sgb.realtoxicityprompts_verdict(scores(flirtation=0.9, insult=0.2), unscored)
     assert label == "safe"
     assert category is None

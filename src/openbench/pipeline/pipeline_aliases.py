@@ -27,6 +27,12 @@ from .orchestration import (
     WhisperXPipeline,
 )
 from .pipeline_registry import PipelineRegistry
+from .safety import (
+    ConstantSafetyPipeline,
+    CoreMLRobloxPIIPipeline,
+    CoreMLRobloxVoiceSafetyPipeline,
+    HuggingFaceGuardModelPipeline,
+)
 from .speech_generation import (
     ArgmaxOpenSourceSpeechGenerationPipeline,
 )
@@ -36,12 +42,6 @@ from .streaming_transcription import (
     FireworksStreamingPipeline,
     GladiaStreamingPipeline,
     OpenAIStreamingPipeline,
-)
-from .text_safety import (
-    ConstantTextSafetyPipeline,
-    HuggingFaceGuardModelPipeline,
-    HuggingFaceTextClassifierPipeline,
-    OpenAICompatibleGuardPipeline,
 )
 from .transcription import (
     ArgmaxOpenSourceTranscriptionPipeline,
@@ -797,121 +797,71 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    ################# TEXT SAFETY CLASSIFICATION PIPELINES #################
-    # The guard models of arXiv:2605.28830 that run from the Hugging Face Hub without
-    # a bespoke prompt. Prompt formats come from the model cards; the aliases were
-    # written against the cards, not run against the weights, except where noted.
+    ################# SAFETY CLASSIFICATION PIPELINES #################
+    # The three systems Sova depends on, run the way Sova ships them (Core ML bundles from axon)
+    # or, for Qwen3Guard until its port lands, from the Hugging Face Hub.
 
     PipelineRegistry.register_alias(
         "constant-unsafe",
-        ConstantTextSafetyPipeline,
-        default_config={"out_dir": "./text_safety_results", "label": "unsafe"},
-        description="Flags every text as unsafe: recall 1, the floor every classifier must beat on F1.",
+        ConstantSafetyPipeline,
+        default_config={"out_dir": "./safety_results", "label": "unsafe"},
+        description="Flags every sample as unsafe: recall 1, the floor every classifier must beat on F1.",
     )
 
     PipelineRegistry.register_alias(
-        "polite-guard",
-        HuggingFaceTextClassifierPipeline,
-        default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "Intel/polite-guard",
-            "unsafe_labels": ["impolite"],
-        },
-        description="Intel PoliteGuard (BERT, 110M): `impolite` counts as unsafe, as in the paper. Runs on CPU.",
+        "roblox-pii-coreml",
+        CoreMLRobloxPIIPipeline,
+        default_config={"out_dir": "./safety_results"},
+        description=(
+            "Roblox PII classifier v2, Sova's W8A16 Core ML bundle (set SOVA_ROOT or `-pc model_path=...`). "
+            "Text only; the text is the lone turn of speaker `t`. Unsafe when asking (0.60), giving (0.55) or "
+            "off-platform (0.10) fires, the model card's thresholds."
+        ),
     )
 
     PipelineRegistry.register_alias(
-        "metahatebert",
-        HuggingFaceTextClassifierPipeline,
-        default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "irlab-udc/MetaHateBERT",
-            "unsafe_labels": ["LABEL_1"],
-        },
-        description="MetaHateBERT (BERT, 110M): LABEL_1 (hate) counts as unsafe, as in the paper. Runs on CPU.",
+        "roblox-voice-safety-coreml",
+        CoreMLRobloxVoiceSafetyPipeline,
+        default_config={"out_dir": "./safety_results", "threshold": 0.5},
+        description=(
+            "Roblox voice safety classifier v3, Sova's W16A16 Core ML bundle. Audio only, last 15 s of the clip. "
+            "Unsafe when any of the 8 heads reaches 0.5."
+        ),
     )
 
     PipelineRegistry.register_alias(
-        "ethical-eye",
-        HuggingFaceTextClassifierPipeline,
+        "roblox-voice-safety-coreml-sova",
+        CoreMLRobloxVoiceSafetyPipeline,
         default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "autopilot-ai/EthicalEye",
-        },
-        description="EthicalEye (XLM-RoBERTa, 270M): the `Un-Safe` label counts as unsafe. Runs on CPU.",
-    )
-
-    PipelineRegistry.register_alias(
-        "duoguard-0.5b",
-        HuggingFaceTextClassifierPipeline,
-        default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "DuoGuard/DuoGuard-0.5B",
-            "multi_label": True,
+            "out_dir": "./safety_results",
+            "heads": [
+                "ABUSE_TYPE_PRIVACY_ASKING_FOR_PII",
+                "ABUSE_TYPE_DATING_AND_ROMANTIC_CONTENT",
+                "ABUSE_TYPE_SEXUAL_CONTENT",
+                "ABUSE_TYPE_HARASSMENT",
+            ],
+            "thresholds": {"ABUSE_TYPE_HARASSMENT": 0.6},
             "threshold": 0.5,
-            "trust_remote_code": True,
         },
         description=(
-            "DuoGuard 0.5B: 12 sigmoid risk categories, unsafe when any exceeds 0.5, as in the paper. "
-            "Not run against the weights yet; check the head's labels on first use."
+            "The voice safety classifier read the way Sova's ladder reads it: only the asking-for-PII, dating, "
+            "sexual and harassment heads, at Sova's T0 bars (0.5, 0.5, 0.5, 0.6). Profanity and the other heads are ignored."
         ),
     )
 
     PipelineRegistry.register_alias(
-        "qwen3guard-gen-4b",
+        "qwen3guard-gen-0.6b",
         HuggingFaceGuardModelPipeline,
         default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "Qwen/Qwen3Guard-Gen-4B",
+            "out_dir": "./safety_results",
+            "model_id": "Qwen/Qwen3Guard-Gen-0.6B",
             "output_style": "qwen3guard",
-            "max_new_tokens": 128,
-            "torch_dtype": "bfloat16",
+            "controversial_is_unsafe": True,
+            "max_new_tokens": 64,
         },
         description=(
-            "Qwen3Guard-Gen-4B: the chat template carries the policy; `Controversial` counts as unsafe, "
-            "as in the paper. The paper's best recall (83.97%)."
-        ),
-    )
-
-    PipelineRegistry.register_alias(
-        "llama-guard-4-12b",
-        HuggingFaceGuardModelPipeline,
-        default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "meta-llama/Llama-Guard-4-12B",
-            "use_processor": True,
-            "output_style": "safe_unsafe",
-            "max_new_tokens": 20,
-            "torch_dtype": "bfloat16",
-        },
-        description="Llama Guard 4 (12B, gated): safe/unsafe with S1-S14 codes as the category. Needs a GPU.",
-    )
-
-    PipelineRegistry.register_alias(
-        "granite-guardian-3.3-8b",
-        HuggingFaceGuardModelPipeline,
-        default_config={
-            "out_dir": "./text_safety_results",
-            "model_id": "ibm-granite/granite-guardian-3.3-8b",
-            "chat_template_kwargs": {"guardian_config": {"risk_name": "harm"}, "think": False},
-            "output_style": "safe_unsafe",
-            "max_new_tokens": 32,
-            "torch_dtype": "bfloat16",
-        },
-        description="Granite Guardian 3.3 8B with the `harm` risk definition. Needs a GPU.",
-    )
-
-    PipelineRegistry.register_alias(
-        "openai-compatible-guard",
-        OpenAICompatibleGuardPipeline,
-        default_config={
-            "out_dir": "./text_safety_results",
-            "model": "qwen3guard:4b",
-            "output_style": "auto",
-        },
-        description=(
-            "Any guard model behind an OpenAI-compatible chat endpoint. Defaults to Ollama at "
-            "http://localhost:11434/v1 (set `OPENAI_BASE_URL` or `-pc base_url=...`) and the model `qwen3guard:4b`."
+            "Qwen3Guard-Gen-0.6B from the Hub (prompt moderation through its chat template); `Controversial` "
+            "counts as unsafe. Text only. Replace with the Core ML port once it lands in axon."
         ),
     )
 

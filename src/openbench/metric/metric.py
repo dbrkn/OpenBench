@@ -116,7 +116,7 @@ class MetricOptions(Enum):
     KEYWORD_PRECISION = "keyword_precision"
     KEYWORD_RECALL = "keyword_recall"
 
-    # Text Safety Classification Metrics
+    # Safety Classification Metrics
     # Binary classification with `unsafe` as the positive class. Recall is the
     # primary metric for safety: a missed unsafe text costs more than a false alarm.
     RECALL = "recall"

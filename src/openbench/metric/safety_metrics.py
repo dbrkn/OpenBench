@@ -65,7 +65,7 @@ def confusion_components(reference: SafetyPrediction, hypothesis: SafetyPredicti
     }
 
 
-class BaseTextSafetyMetric(BaseMetric):
+class BaseSafetyMetric(BaseMetric):
     """Shared accumulation of confusion counts.
 
     `compute_metric` receives either one sample's counts (per-sample value,
@@ -102,8 +102,8 @@ class BaseTextSafetyMetric(BaseMetric):
         return float(center), (float(lower), float(upper))
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.RECALL)
-class TextSafetyRecall(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.RECALL)
+class SafetyRecall(BaseSafetyMetric):
     """Share of unsafe texts flagged as unsafe (the primary safety metric)."""
 
     @classmethod
@@ -114,8 +114,8 @@ class TextSafetyRecall(BaseTextSafetyMetric):
         return _safe_divide(detail[TRUE_POSITIVES], detail[TRUE_POSITIVES] + detail[FALSE_NEGATIVES])
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.PRECISION)
-class TextSafetyPrecision(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.PRECISION)
+class SafetyPrecision(BaseSafetyMetric):
     """Share of texts flagged as unsafe that are unsafe."""
 
     @classmethod
@@ -126,8 +126,8 @@ class TextSafetyPrecision(BaseTextSafetyMetric):
         return _safe_divide(detail[TRUE_POSITIVES], detail[TRUE_POSITIVES] + detail[FALSE_POSITIVES])
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.F1)
-class TextSafetyF1(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.F1)
+class SafetyF1(BaseSafetyMetric):
     """Harmonic mean of precision and recall on the unsafe class."""
 
     @classmethod
@@ -141,8 +141,8 @@ class TextSafetyF1(BaseTextSafetyMetric):
         )
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.ACCURACY)
-class TextSafetyAccuracy(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.ACCURACY)
+class SafetyAccuracy(BaseSafetyMetric):
     """Share of texts with the correct verdict."""
 
     @classmethod
@@ -154,8 +154,8 @@ class TextSafetyAccuracy(BaseTextSafetyMetric):
         return _safe_divide(detail[TRUE_POSITIVES] + detail[TRUE_NEGATIVES], total)
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.MCC)
-class TextSafetyMCC(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.MCC)
+class SafetyMCC(BaseSafetyMetric):
     """Matthews correlation coefficient between reference and predicted verdicts.
 
     Undefined for one sample; the global value comes from the summed counts.
@@ -173,8 +173,8 @@ class TextSafetyMCC(BaseTextSafetyMetric):
         return (tp * tn - fp * fn) / denominator
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.ROC_AUC)
-class TextSafetyROCAUC(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.ROC_AUC)
+class SafetyROCAUC(BaseSafetyMetric):
     """Area under the ROC curve of the unsafe score.
 
     Not decomposable per sample: the per-sample value is None and the global
@@ -233,8 +233,8 @@ def category_bucket(category: str | None) -> str:
     return category if category in NIST_SAFETY_CATEGORIES else OTHER_CATEGORY
 
 
-@MetricRegistry.register_metric(PipelineType.TEXT_SAFETY_CLASSIFICATION, MetricOptions.CATEGORY_RECALL)
-class TextSafetyCategoryRecall(BaseTextSafetyMetric):
+@MetricRegistry.register_metric(PipelineType.SAFETY_CLASSIFICATION, MetricOptions.CATEGORY_RECALL)
+class SafetyCategoryRecall(BaseSafetyMetric):
     """Recall per reference category, reported as their macro average.
 
     The components hold the true positives and false negatives of each
