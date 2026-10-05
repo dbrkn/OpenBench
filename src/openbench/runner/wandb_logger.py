@@ -21,6 +21,7 @@ from .data_models import (
     GlobalResult,
     SpeechGenerationSampleResult,
     TaskResult,
+    TextSafetySampleResult,
     TranscriptionSampleResult,
 )
 
@@ -376,3 +377,60 @@ class SpeechGenerationWandbLogger(WandbLogger[SpeechGenerationSampleResult]):
         sample_results: list[SpeechGenerationSampleResult],
     ) -> dict[str, Any]:
         return {}
+
+
+class TextSafetyWandbLogger(WandbLogger[TextSafetySampleResult]):
+    """Logger for text safety classification results.
+
+    Adds the global confusion matrix, summed from the per-sample components of
+    the first confusion-based metric that ran, and the recall of every
+    reference category when `category_recall` ran.
+    """
+
+    CONFUSION_COMPONENTS = ("true_positives", "false_positives", "false_negatives", "true_negatives")
+
+    def get_sample_results_table(self, sample_results: list[TextSafetySampleResult]) -> dict[str, wandb.Table]:
+        """Flatten the verdict into plain columns; a nested prediction with enums and optional fields breaks wandb tables."""
+        self.logger.info("Creating sample results table")
+        rows = []
+        for sample_result in sample_results:
+            row = sample_result.model_dump(exclude={"prediction"})
+            prediction = sample_result.prediction
+            row["predicted_label"] = prediction.label.value
+            row["unsafe_score"] = prediction.unsafe_score
+            row["predicted_category"] = prediction.category or ""
+            row["raw_output"] = prediction.raw_output or ""
+            rows.append(row)
+        dataset_name = rows[0]["dataset_name"]
+
+        df = pd.DataFrame(rows)
+        df.to_csv(self.results_dir / "sample_results_table.csv", index=False)
+
+        return {
+            f"{dataset_name}/sample_results_table": wandb.Table(
+                data=[list(row.values()) for row in rows], columns=list(rows[0].keys())
+            )
+        }
+
+    def custom_log(
+        self,
+        global_results: list[GlobalResult],
+        task_results: list[TaskResult],
+        sample_results: list[TextSafetySampleResult],
+    ) -> dict[str, Any]:
+        logs: dict[str, Any] = {}
+        for global_result in global_results:
+            detail = global_result.detailed_result or {}
+            prefix = f"{global_result.dataset_name}/text_safety"
+            if (
+                all(component in detail for component in self.CONFUSION_COMPONENTS)
+                and f"{prefix}/true_positives" not in logs
+            ):
+                for component in self.CONFUSION_COMPONENTS:
+                    logs[f"{prefix}/{component}"] = detail[component]
+            if global_result.metric_name == "category_recall":
+                from ..metric.text_safety_metrics import TextSafetyCategoryRecall
+
+                for category, recall in TextSafetyCategoryRecall.recall_per_category(detail).items():
+                    logs[f"{prefix}/recall/{category}"] = recall
+        return logs

@@ -40,6 +40,7 @@ dependencies = [
     "meeteval>=0.4.3",
     "nemo-toolkit[asr]>=2.6.0",
     "elevenlabs>=2.30.0",
+    "transformers>=4.48.2,<5",
 ]
 
 [project.scripts]

@@ -98,6 +98,10 @@ def get_dummy_sample(
             extra_info={},
             reference=Transcript.from_words_info(words=["dummy"]),
         )
+    elif pipeline_type == PipelineType.TEXT_SAFETY_CLASSIFICATION:
+        raise ValueError(
+            "Text safety classification pipelines take text, not audio; run them with `openbench-cli evaluate`."
+        )
 
 
 def inference(

@@ -115,3 +115,18 @@ class MetricOptions(Enum):
     KEYWORD_FSCORE = "keyword_fscore"
     KEYWORD_PRECISION = "keyword_precision"
     KEYWORD_RECALL = "keyword_recall"
+
+    # Text Safety Classification Metrics
+    # Binary classification with `unsafe` as the positive class. Recall is the
+    # primary metric for safety: a missed unsafe text costs more than a false alarm.
+    RECALL = "recall"
+    PRECISION = "precision"
+    F1 = "f1"
+    ACCURACY = "accuracy"
+    # Area under the ROC curve of the unsafe score (hard verdicts when no score is emitted)
+    ROC_AUC = "roc_auc"
+    # Matthews Correlation Coefficient
+    MCC = "mcc"
+    # Macro-averaged recall over the benchmark's categories, with the per-category
+    # true positives and false negatives in the detailed result
+    CATEGORY_RECALL = "category_recall"

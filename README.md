@@ -113,6 +113,11 @@ openbench-cli evaluate \
 openbench-cli evaluate --help
 ```
 
+```bash
+# Evaluate a text safety guard model on the safety guard benchmark (arXiv:2605.28830)
+openbench-cli evaluate -p polite-guard -d safety-guard-bench-mini -m recall -m precision -m f1 -m roc_auc -m category_recall
+```
+
 #### `inference` - Run Single Audio Inference
 Test your pipeline on individual audio files for quick validation.
 
@@ -275,6 +280,18 @@ OpenBench supports different pipeline types, each requiring specific dataset sch
 - `word_detail`: List of dictionaries containing word-level information with `start` and `stop` timestamps in samples (will be converted to seconds)
 
 **Note**: Currently, most available datasets are optimized for diarization tasks. For transcription, orchestration, and streaming transcription pipelines, you may need to prepare additional annotations or use datasets that include the required fields for each task type.
+
+#### Text Safety Classification Pipeline Schema
+**Required columns:**
+- `text`: The text to classify (a user prompt)
+- `label`: `safe` / `unsafe` (also accepts 0/1 or booleans)
+
+**Optional columns:**
+- `id`: Stable sample name used for the prediction files
+- `category`: The benchmark's category of an unsafe text; `category_recall` reports recall per category. The safety guard benchmark uses `violence`, `hate_speech`, `suicide_self_harm`, `sexual_content`, `harassment`, `profanity`, `threats` and `health_misinformation`
+- `source`, `source_category`, `confidence`: Provenance of the row
+
+No audio is involved. The `safety-guard-bench*` aliases are not hosted anywhere: `openbench.dataset.safety_guard_benchmark` rebuilds the benchmark of [Benchmarking Open-Source Safety Guard Models](https://arxiv.org/abs/2605.28830) from the original repositories at load time (HarmBench and StrongREJECT from GitHub at pinned commits, RealToxicityPrompts and BeaverTails from the Hugging Face Hub, about 70 MB in total), applies the paper's filtering and labeling, and checks the result against the paper's counts. `safety-guard-bench-mini` keeps a seeded random 250 prompts per source; `safety-guard-bench-<source>` evaluates one source. Any `DatasetConfig` can use such a builder through its `loader` field (`package.module:function`) and `loader_kwargs`.
 
 ### Local Datasets
 
@@ -554,6 +571,12 @@ The BenchmarkRunner will automatically:
 
 
 </details>
+
+#### Text Safety Classification Pipeline
+- Input: `TextSafetySample` (`sample.text`, reference `SafetyPrediction`)
+- Output: `TextSafetyOutput` with a `SafetyPrediction` (`label`, optional `unsafe_score` in [0, 1] for ROC-AUC, the model's `category`, `raw_output`)
+- Metrics: `recall`, `precision`, `f1`, `accuracy`, `mcc`, `roc_auc`, `category_recall`
+- Built-in pipelines: `HuggingFaceTextClassifierPipeline` (sequence classification heads such as PoliteGuard, MetaHateBERT, EthicalEye, DuoGuard), `HuggingFaceGuardModelPipeline` (generative guards such as Qwen3Guard, Llama Guard 4, Granite Guardian; greedy decoding, verdict parsed from the generation, optional first-token score), `OpenAICompatibleGuardPipeline` (a guard served by Ollama, vLLM, LM Studio or OpenAI) and `ConstantTextSafetyPipeline` (the always-unsafe floor)
 
 ## Hydra Configuration
 <details>

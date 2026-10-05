@@ -8,6 +8,7 @@ from .orchestration import *
 from .pipeline_registry import PipelineRegistry
 from .speech_generation import *
 from .streaming_transcription import *
+from .text_safety import *
 from .transcription import *
 
 # Import pipeline aliases to register them

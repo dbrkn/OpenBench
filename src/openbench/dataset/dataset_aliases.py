@@ -649,6 +649,49 @@ def register_dataset_aliases() -> None:
         description="TIMIT stitched dataset with very long silences for endpointing evals",
     )
 
+    ########## TEXT SAFETY CLASSIFICATION ##########
+    # The safety guard benchmark of arXiv:2605.28830, rebuilt from the original
+    # repositories at load time (nothing is re-hosted); see
+    # `openbench.dataset.safety_guard_benchmark` for the reconstruction.
+    safety_guard_loader = "openbench.dataset.safety_guard_benchmark:load_safety_guard_benchmark"
+    DatasetRegistry.register_alias(
+        "safety-guard-bench",
+        DatasetConfig(dataset_id="safety-guard-bench", split="test", loader=safety_guard_loader),
+        supported_pipeline_types={PipelineType.TEXT_SAFETY_CLASSIFICATION},
+        description=(
+            "Safety guard benchmark (arXiv:2605.28830): 79,331 prompts from HarmBench, StrongREJECT, "
+            "RealToxicityPrompts and BeaverTails labeled safe/unsafe under 8 NIST safety categories."
+        ),
+    )
+    DatasetRegistry.register_alias(
+        "safety-guard-bench-mini",
+        DatasetConfig(
+            dataset_id="safety-guard-bench-mini",
+            split="test",
+            loader=safety_guard_loader,
+            loader_kwargs={"max_samples_per_source": 250, "seed": 0},
+        ),
+        supported_pipeline_types={PipelineType.TEXT_SAFETY_CLASSIFICATION},
+        description="Safety guard benchmark capped at a seeded random 250 prompts per source (at most 1,000).",
+    )
+    for source, label in [
+        ("harmbench", "HarmBench: 103 adversarial behaviors, all unsafe"),
+        ("strongreject", "StrongREJECT: 154 forbidden prompts, all unsafe"),
+        ("realtoxicityprompts", "RealToxicityPrompts: 67,521 web prompts, 31,583 unsafe and 35,938 safe"),
+        ("beavertails", "BeaverTails 30k train: 11,553 unsafe prompts"),
+    ]:
+        DatasetRegistry.register_alias(
+            f"safety-guard-bench-{source}",
+            DatasetConfig(
+                dataset_id=f"safety-guard-bench-{source}",
+                split="test",
+                loader=safety_guard_loader,
+                loader_kwargs={"sources": [source]},
+            ),
+            supported_pipeline_types={PipelineType.TEXT_SAFETY_CLASSIFICATION},
+            description=f"Safety guard benchmark, one source. {label}.",
+        )
+
     # Local dataset to use with env variables to override with env vars
     # and allow easy testing of local datasets
     if os.getenv("LOCAL_DATASET_PATH") and os.getenv("LOCAL_DATASET_SPLIT"):

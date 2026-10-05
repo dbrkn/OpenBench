@@ -22,6 +22,15 @@ from .streaming_latency_metrics import (
     NumSubstitutions,
     StreamingLatency,
 )
+from .text_safety_metrics import (
+    TextSafetyAccuracy,
+    TextSafetyCategoryRecall,
+    TextSafetyF1,
+    TextSafetyMCC,
+    TextSafetyPrecision,
+    TextSafetyRecall,
+    TextSafetyROCAUC,
+)
 from .word_error_metrics import (
     ConcatenatedMinimumPermutationWER,
     SpeechGenerationWordErrorRate,

@@ -1,0 +1,5 @@
+safety-guard-bench:
+  dataset_id: safety-guard-bench
+  split: test
+  loader: openbench.dataset.safety_guard_benchmark:load_safety_guard_benchmark
+  loader_kwargs: {}

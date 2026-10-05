@@ -1,0 +1,6 @@
+HuggingFaceTextClassifierPipeline:
+  config:
+    out_dir: "./text_safety_results"
+    model_id: "Intel/polite-guard"
+    unsafe_labels: ["impolite"]
+    threshold: 0.5

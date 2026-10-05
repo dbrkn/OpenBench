@@ -26,6 +26,10 @@
   - [Precision](#precision)
   - [Recall](#recall)
   - [F-score](#f-score)
+- [Text Safety Classification](#text-safety-classification)
+  - [Benchmarked Systems](#benchmarked-systems-5)
+  - [Benchmarked Datasets](#benchmarked-datasets-4)
+  - [Recall, Precision, F1, ROC-AUC](#recall-precision-f1-roc-auc)
 
 <br/>
 
@@ -681,3 +685,62 @@ F1 = 2 × (0.75 × 0.6) / (0.75 + 0.6) = **66.7%**, reflecting the model's overa
 
 <br/><br/>
 
+<br/>
+
+# Text Safety Classification
+
+Binary safe/unsafe classification of user prompts by safety guard models, following
+[Benchmarking Open-Source Safety Guard Models: A Comprehensive Evaluation](https://arxiv.org/abs/2605.28830)
+(Harsh, Sarmah and Pasquali, 2026). Recall on the unsafe class is the primary metric: a missed unsafe
+prompt costs more than a false alarm.
+
+## Benchmarked Systems
+
+<details>
+<summary>Click to expand</summary>
+
+### PoliteGuard
+- **Latest Run:** `2026-10-05`
+- **Model Version:** `Intel/polite-guard` (BERT-base, 110M); `impolite` counts as unsafe, as in the paper
+- **Configuration:** `openbench-cli evaluate -p polite-guard -d safety-guard-bench-mini -m recall -m precision -m f1 -m accuracy -m mcc -m roc_auc -m category_recall`
+- **Code Reference:** [openbench/pipeline/text_safety/text_safety_hf_classifier.py](https://github.com/argmaxinc/OpenBench/blob/main/src/openbench/pipeline/text_safety/text_safety_hf_classifier.py)
+- **Hardware**: Apple Silicon Mac (MPS)
+
+</details>
+
+## Benchmarked Datasets
+
+<details>
+<summary>Click to expand</summary>
+
+### safety-guard-bench
+- **Language:** English
+- **Domain:** User prompts: adversarial behaviors (HarmBench, 103), forbidden prompts (StrongREJECT, 154), web sentences with Perspective API scores (RealToxicityPrompts, 67,521, the only source of safe prompts) and human-annotated prompts (BeaverTails 30k train, 11,553)
+- **Description:** 79,331 prompts, 54.7% unsafe, under 8 NIST AI RMF SAFETY subcategories. Rebuilt from the original repositories at load time by `openbench.dataset.safety_guard_benchmark`; the sample sets and labels match the paper's Table 1 exactly, the per-category counts match its Table 10 for harassment, threats, profanity and suicide/self-harm exactly and the other categories to within 35 rows (the paper does not state how multi-label BeaverTails rows get one category)
+
+### safety-guard-bench-mini
+- **Language:** English
+- **Domain:** Same as above
+- **Description:** A seeded random 250 prompts per source (757 in total: 103 + 154 + 250 + 250), 628 unsafe and 129 safe. Fast to run on a laptop; its class balance differs from the full benchmark, so its precision and accuracy are not comparable with the paper's
+
+</details>
+
+## Recall, Precision, F1, ROC-AUC
+
+<details>
+<summary>Click to expand</summary>
+
+**What they measure:** With `unsafe` as the positive class, recall is the share of unsafe prompts flagged, precision the share of flagged prompts that are unsafe, F1 their harmonic mean, accuracy the share of correct verdicts and MCC the correlation between reference and predicted verdicts. ROC-AUC ranks the model's unsafe score; a model that emits only a verdict gets the balanced accuracy of its hard verdicts. `category_recall` is the macro average of the recall per reference category, with each category's counts in the detailed result.
+
+**How to interpret:** The always-unsafe baseline has recall 1.0 and the precision of the dataset's unsafe share, so a guard model is only useful above that F1. The paper ranks models by recall and finds that larger guard models are often the most conservative.
+
+</details>
+
+Results on `safety-guard-bench-mini` (757 prompts); the full benchmark is `-d safety-guard-bench`.
+
+| System<br/>(model) | Recall | Precision | F1 | Accuracy | MCC | ROC-AUC | Category recall |
+|---|---|---|---|---|---|---|---|
+| PoliteGuard<br/>(Intel/polite-guard) | 0.393 | 0.829 | 0.533 | 0.429 | -0.002 | 0.493 | 0.462 |
+| Always unsafe<br/>(baseline) | 1.000 | 0.830 | 0.907 | 0.830 | - | 0.500 | 1.000 |
+
+<br/><br/>

@@ -6,7 +6,13 @@ from typing import Generic, TypeVar, Union
 import numpy as np
 from pydantic import BaseModel, Field
 
-from ..pipeline_prediction import DiarizationAnnotation, GeneratedAudio, StreamingTranscript, Transcript
+from ..pipeline_prediction import (
+    DiarizationAnnotation,
+    GeneratedAudio,
+    SafetyPrediction,
+    StreamingTranscript,
+    Transcript,
+)
 from ..types import PredictionProtocol
 
 
@@ -77,6 +83,14 @@ class SpeechGenerationSampleResult(BaseSampleResult[GeneratedAudio]):
     """
 
 
+class TextSafetySampleResult(BaseSampleResult[SafetyPrediction]):
+    """The text safety classification result for a given sample of a dataset.
+
+    The prediction carries the verdict, the unsafe score, the model's category
+    and its raw output; the audio duration is zero since the input is text.
+    """
+
+
 class TaskResult(BaseModel):
     """The evaluation result for a given task on a given sample of a dataset"""
 
@@ -110,8 +124,8 @@ class GlobalResult(BaseModel):
 
 
 class BenchmarkResult(BaseModel):
-    sample_results: list[DiarizationSampleResult | TranscriptionSampleResult | SpeechGenerationSampleResult] = Field(
-        ..., description="The results of the samples"
-    )
+    sample_results: list[
+        DiarizationSampleResult | TranscriptionSampleResult | SpeechGenerationSampleResult | TextSafetySampleResult
+    ] = Field(..., description="The results of the samples")
     task_results: list[TaskResult] = Field(..., description="The results of the tasks")
     global_results: list[GlobalResult] = Field(..., description="The results of the global metrics")

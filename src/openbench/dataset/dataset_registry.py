@@ -10,6 +10,7 @@ from .dataset_diarization import DiarizationDataset
 from .dataset_orchestration import OrchestrationDataset
 from .dataset_speech_generation import SpeechGenerationDataset
 from .dataset_streaming_transcription import StreamingDataset
+from .dataset_text_safety import TextSafetyDataset
 from .dataset_transcription import TranscriptionDataset
 
 
@@ -141,3 +142,4 @@ DatasetRegistry.register(PipelineType.ORCHESTRATION, OrchestrationDataset)
 DatasetRegistry.register(PipelineType.STREAMING_TRANSCRIPTION, StreamingDataset)
 DatasetRegistry.register(PipelineType.TRANSCRIPTION, TranscriptionDataset)
 DatasetRegistry.register(PipelineType.SPEECH_GENERATION, SpeechGenerationDataset)
+DatasetRegistry.register(PipelineType.TEXT_SAFETY_CLASSIFICATION, TextSafetyDataset)

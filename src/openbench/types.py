@@ -13,6 +13,7 @@ class PipelineType(Enum):
     ORCHESTRATION = "orchestration"
     STREAMING_TRANSCRIPTION = "streaming_transcription"
     SPEECH_GENERATION = "speech_generation"
+    TEXT_SAFETY_CLASSIFICATION = "text_safety_classification"
 
 
 # All prediction classes that we output should conform to this

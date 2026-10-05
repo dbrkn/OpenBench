@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 from collections import defaultdict
+from enum import Enum
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -318,3 +319,42 @@ class StreamingTranscript(BaseModel):
             json.dump(data, f, indent=2)
 
         return path
+
+
+class SafetyLabel(str, Enum):
+    """Binary verdict of a text safety classifier."""
+
+    SAFE = "safe"
+    UNSAFE = "unsafe"
+
+
+class SafetyPrediction(BaseModel):
+    """Verdict of a text safety classifier on one text sample.
+
+    Used both as the dataset reference (label plus the benchmark's taxonomy
+    category) and as the pipeline prediction (label, optional score, the
+    model's own category code and its raw output).
+    """
+
+    label: SafetyLabel = Field(..., description="Binary verdict: safe or unsafe.")
+    unsafe_score: float | None = Field(
+        None,
+        description="Score in [0, 1] that the text is unsafe, when the model emits one; used for ROC-AUC.",
+    )
+    category: str | None = Field(
+        None,
+        description="Taxonomy category. For references the benchmark's category, for predictions the model's own code.",
+    )
+    raw_output: str | None = Field(None, description="Raw model output the verdict was parsed from, if any.")
+
+    @property
+    def is_unsafe(self) -> bool:
+        return self.label == SafetyLabel.UNSAFE
+
+    def to_annotation_file(self, output_dir: str, filename: str) -> str:
+        """Persist the verdict as `{filename}.json`."""
+        output_path = Path(output_dir) / f"{filename}.json"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(self.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
+        return str(output_path)

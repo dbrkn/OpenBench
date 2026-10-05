@@ -1,0 +1,7 @@
+safety-guard-bench-mini:
+  dataset_id: safety-guard-bench-mini
+  split: test
+  loader: openbench.dataset.safety_guard_benchmark:load_safety_guard_benchmark
+  loader_kwargs:
+    max_samples_per_source: 250
+    seed: 0
