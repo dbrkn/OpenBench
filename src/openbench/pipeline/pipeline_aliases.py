@@ -3,60 +3,89 @@
 
 """Pipeline alias registrations for common configurations."""
 
-import os
+# The audio pipeline classes are bound through globals() below (their families are optional), which ruff cannot see.
+# ruff: noqa: F821
 
-from .diarization import (
-    ArgmaxOpenSourceDiarizationPipeline,
-    AWSTranscribePipeline,
-    DeepgramDiarizationPipeline,
-    ElevenLabsDiarizationPipeline,
-    NeMoSortformerPipeline,
-    PicovoicePipeline,
-    PyannoteApiPipeline,
-    PyAnnotePipeline,
-    SpeakerKitPipeline,
-)
-from .orchestration import (
-    ArgmaxOpenSourceOrchestrationPipeline,
-    DeepgramOrchestrationPipeline,
-    ElevenLabsOrchestrationPipeline,
-    NeMoMTParakeetPipeline,
-    OpenAIOrchestrationPipeline,
-    PyannoteOrchestrationPipeline,
-    WhisperKitProOrchestrationPipeline,
-    WhisperXPipeline,
-)
+import importlib
+import os
+from typing import Any
+
 from .pipeline_registry import PipelineRegistry
-from .speech_generation import (
-    ArgmaxOpenSourceSpeechGenerationPipeline,
+from .safety import (
+    ConstantSafetyPipeline,
+    CoreMLRobloxPIIPipeline,
+    HuggingFacePrivacyFilterPipeline,
+    HuggingFaceRobloxPIIPipeline,
 )
-from .streaming_transcription import (
-    AssemblyAIStreamingPipeline,
-    DeepgramStreamingPipeline,
-    FireworksStreamingPipeline,
-    GladiaStreamingPipeline,
-    OpenAIStreamingPipeline,
-)
-from .transcription import (
-    ArgmaxOpenSourceTranscriptionPipeline,
-    AssemblyAITranscriptionPipeline,
-    DeepgramTranscriptionPipeline,
-    ElevenLabsTranscriptionPipeline,
-    GroqTranscriptionPipeline,
-    NeMoTranscriptionPipeline,
-    OpenAITranscriptionPipeline,
-    PyannoteTranscriptionPipeline,
-    SpeechAnalyzerPipeline,
-    WhisperKitProTranscriptionPipeline,
-    WhisperOSSTranscriptionPipeline,
-)
+
+
+# The audio families are optional (see `openbench.pipeline`): a family whose imports fail binds its pipeline classes
+# to None and `_register_alias` skips their aliases.
+_FAMILY_PIPELINES = {
+    "diarization": (
+        "ArgmaxOpenSourceDiarizationPipeline",
+        "AWSTranscribePipeline",
+        "DeepgramDiarizationPipeline",
+        "ElevenLabsDiarizationPipeline",
+        "NeMoSortformerPipeline",
+        "PicovoicePipeline",
+        "PyannoteApiPipeline",
+        "PyAnnotePipeline",
+        "SpeakerKitPipeline",
+    ),
+    "orchestration": (
+        "ArgmaxOpenSourceOrchestrationPipeline",
+        "DeepgramOrchestrationPipeline",
+        "ElevenLabsOrchestrationPipeline",
+        "NeMoMTParakeetPipeline",
+        "OpenAIOrchestrationPipeline",
+        "PyannoteOrchestrationPipeline",
+        "WhisperKitProOrchestrationPipeline",
+        "WhisperXPipeline",
+    ),
+    "speech_generation": ("ArgmaxOpenSourceSpeechGenerationPipeline",),
+    "streaming_transcription": (
+        "AssemblyAIStreamingPipeline",
+        "DeepgramStreamingPipeline",
+        "FireworksStreamingPipeline",
+        "GladiaStreamingPipeline",
+        "OpenAIStreamingPipeline",
+    ),
+    "transcription": (
+        "ArgmaxOpenSourceTranscriptionPipeline",
+        "AssemblyAITranscriptionPipeline",
+        "DeepgramTranscriptionPipeline",
+        "ElevenLabsTranscriptionPipeline",
+        "GroqTranscriptionPipeline",
+        "NeMoTranscriptionPipeline",
+        "OpenAITranscriptionPipeline",
+        "PyannoteTranscriptionPipeline",
+        "SpeechAnalyzerPipeline",
+        "WhisperKitProTranscriptionPipeline",
+        "WhisperOSSTranscriptionPipeline",
+    ),
+}
+for _family, _names in _FAMILY_PIPELINES.items():
+    try:
+        _module = importlib.import_module(f".{_family}", __package__)
+    except ImportError:  # reported once by `openbench.pipeline`
+        _module = None
+    for _name in _names:
+        globals()[_name] = getattr(_module, _name, None)
+
+
+def _register_alias(alias: str, pipeline_class: Any, default_config: dict[str, Any], description: str = "") -> None:
+    """`PipelineRegistry.register_alias`, skipping the aliases of a pipeline family that did not import."""
+    if pipeline_class is None:
+        return
+    PipelineRegistry.register_alias(alias, pipeline_class, default_config=default_config, description=description)
 
 
 def register_pipeline_aliases() -> None:
     """Register all pipeline aliases with their configurations."""
 
     ################# DIARIZATION PIPELINES #################
-    PipelineRegistry.register_alias(
+    _register_alias(
         "aws-diarization",
         AWSTranscribePipeline,
         default_config={
@@ -70,7 +99,7 @@ def register_pipeline_aliases() -> None:
         description="AWS Transcribe with speaker diarization. Requires AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) and S3 bucket setup.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "pyannote",
         PyAnnotePipeline,
         default_config={
@@ -85,7 +114,7 @@ def register_pipeline_aliases() -> None:
         description="Pyannote open-source speaker diarization pipeline.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "nemo-sortformer",
         NeMoSortformerPipeline,
         default_config={
@@ -100,7 +129,7 @@ def register_pipeline_aliases() -> None:
         description="NeMo Sortformer speaker diarization pipeline.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "pyannote-api",
         PyannoteApiPipeline,
         default_config={
@@ -112,7 +141,7 @@ def register_pipeline_aliases() -> None:
         description="PyannoteAI API speaker diarization pipeline using the precision-3 model. Requires `PYANNOTE_TOKEN` env var from https://www.pyannote.ai/.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "speakerkit",
         SpeakerKitPipeline,
         default_config={
@@ -123,7 +152,7 @@ def register_pipeline_aliases() -> None:
         description="SpeakerKit speaker diarization pipeline using community-1 model from pyannote. Requires CLI installation and API key. Set `SPEAKERKIT_CLI_PATH` and `SPEAKERKIT_API_KEY` env vars. For access to the CLI binary contact speakerkitpro@argmaxinc.com",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "speakerkit-sortformer-compressed",
         SpeakerKitPipeline,
         default_config={
@@ -141,7 +170,7 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "speakerkit-nemotron-3-diarization",
         SpeakerKitPipeline,
         default_config={
@@ -159,7 +188,7 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "argmax-oss-diarization",
         ArgmaxOpenSourceDiarizationPipeline,
         default_config={
@@ -172,7 +201,7 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "picovoice-diarization",
         PicovoicePipeline,
         default_config={
@@ -181,7 +210,7 @@ def register_pipeline_aliases() -> None:
         description="Picovoice diarization pipeline. Requires API key from https://www.picovoice.ai/. Set `PICOVOICE_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "deepgram-diarization",
         DeepgramDiarizationPipeline,
         default_config={
@@ -191,7 +220,7 @@ def register_pipeline_aliases() -> None:
         description="Deepgram diarization pipeline. Requires API key from https://www.deepgram.com/. Set `DEEPGRAM_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "elevenlabs-diarization",
         ElevenLabsDiarizationPipeline,
         default_config={
@@ -203,7 +232,7 @@ def register_pipeline_aliases() -> None:
 
     ################# ORCHESTRATION PIPELINES #################
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperx-tiny",
         WhisperXPipeline,
         default_config={
@@ -217,7 +246,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperX diarized transcription pipeline from https://github.com/m-bain/whisperX running with the tiny model",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperx-large-v3-turbo",
         WhisperXPipeline,
         default_config={
@@ -231,7 +260,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperX diarzed transcription pipeline from https://github.com/m-bain/whisperX running with the large-v3-turbo model",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "deepgram-orchestration",
         DeepgramOrchestrationPipeline,
         default_config={
@@ -241,7 +270,7 @@ def register_pipeline_aliases() -> None:
         description="Deepgram orchestration pipeline. Requires API key from https://www.deepgram.com/. Set `DEEPGRAM_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "elevenlabs-orchestration",
         ElevenLabsOrchestrationPipeline,
         default_config={
@@ -251,7 +280,7 @@ def register_pipeline_aliases() -> None:
         description="ElevenLabs orchestration pipeline with diarization. Requires API key from https://elevenlabs.io/. Set `ELEVENLABS_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-tiny",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -265,7 +294,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the tiny version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-large-v3",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -279,7 +308,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the large-v3 version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-large-v3-turbo",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -293,7 +322,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the large-v3-v20240930 version of the model (which is the same as large-v3-turbo from OpenAI). Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-large-v3-turbo-compressed",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -307,7 +336,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the large-v3-v20240930 version of the model compressed to 626MB (which is the same as large-v3-turbo from OpenAI). Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-parakeet-v2",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -321,7 +350,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the parakeet-v2 version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-parakeet-v2-compressed",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -335,7 +364,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the parakeet-v2 version of the model compressed to 476MB. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-parakeet-v2-compressed-sortformer-compressed",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -352,7 +381,7 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-parakeet-v3",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -366,7 +395,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the parakeet-v3 version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-parakeet-v3-compressed",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -380,7 +409,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro orchestration pipeline using the parakeet-v3 version of the model compressed to 494MB. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-orchestration-parakeet-v3-compressed-sortformer-compressed",
         WhisperKitProOrchestrationPipeline,
         default_config={
@@ -397,7 +426,7 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "openai-orchestration",
         OpenAIOrchestrationPipeline,
         default_config={
@@ -406,7 +435,7 @@ def register_pipeline_aliases() -> None:
         description="OpenAI orchestration pipeline using the `gpt-4o-transcribe-diarize` version of the model. Requires `OPENAI_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "nemo-mt-parakeet",
         NeMoMTParakeetPipeline,
         default_config={
@@ -417,7 +446,7 @@ def register_pipeline_aliases() -> None:
         description="NeMo Multi-Talker Parakeet orchestration pipeline (diarization + transcription).",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "pyannote-orchestration",
         PyannoteOrchestrationPipeline,
         default_config={
@@ -429,7 +458,7 @@ def register_pipeline_aliases() -> None:
         description="PyannoteAI orchestration pipeline (diarization + transcription). Uses the precision-3 model with Nvidia Parakeet STT. Requires `PYANNOTE_TOKEN` env var from https://www.pyannote.ai/.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "argmax-oss-orchestration-tiny",
         ArgmaxOpenSourceOrchestrationPipeline,
         default_config={
@@ -444,7 +473,7 @@ def register_pipeline_aliases() -> None:
 
     ################# TRANSCRIPTION PIPELINES #################
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkit-tiny",
         ArgmaxOpenSourceTranscriptionPipeline,
         default_config={
@@ -458,7 +487,7 @@ def register_pipeline_aliases() -> None:
         "first-run model load so speed factor is less misleading than on very short utterances.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkit-large-v3",
         ArgmaxOpenSourceTranscriptionPipeline,
         default_config={
@@ -471,7 +500,7 @@ def register_pipeline_aliases() -> None:
         "`librispeech-200` is better reserved for quick WER smoke tests.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkit-large-v3-turbo",
         ArgmaxOpenSourceTranscriptionPipeline,
         default_config={
@@ -484,7 +513,7 @@ def register_pipeline_aliases() -> None:
         "clips skew speed factor because of fixed startup cost per file.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "speech-analyzer",
         SpeechAnalyzerPipeline,
         default_config={
@@ -509,7 +538,7 @@ def register_pipeline_aliases() -> None:
 
     # New mode with manual local model download
     # to avoid HF Download Rate Limiting
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-tiny",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -520,7 +549,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the tiny version of the model. Requires Swift and Xcode installed. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-large-v3",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -531,7 +560,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the large-v3 version of the model. Requires Swift and Xcode installed. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-large-v3-turbo",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -542,7 +571,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the large-v3-v20240930 version of the model (which is the same as large-v3-turbo from OpenAI). Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-large-v3-turbo-compressed",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -553,7 +582,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the large-v3-v20240930 version of the model compressed to 626MB (which is the same as large-v3-turbo from OpenAI). Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-parakeet-v2",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -564,7 +593,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the parakeet-v2 version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-parakeet-v2-compressed",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -575,7 +604,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the parakeet-v2 version of the model compressed to 476MB. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-parakeet-v3",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -586,7 +615,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the parakeet-v3 version of the model. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-parakeet-v3-compressed",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -597,7 +626,7 @@ def register_pipeline_aliases() -> None:
         description="WhisperKitPro transcription pipeline using the parakeet-v3 version of the model compressed to 494MB. Requires `WHISPERKITPRO_CLI_PATH` env var and depending on your permissions also `WHISPERKITPRO_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisperkitpro-local-model",
         WhisperKitProTranscriptionPipeline,
         default_config={
@@ -611,7 +640,7 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "groq-whisper-large-v3-turbo",
         GroqTranscriptionPipeline,
         default_config={
@@ -622,7 +651,7 @@ def register_pipeline_aliases() -> None:
         description="Groq transcription pipeline using the whisper-large-v3-turbo model. Requires `GROQ_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "groq-whisper-large-v3",
         GroqTranscriptionPipeline,
         default_config={
@@ -635,7 +664,7 @@ def register_pipeline_aliases() -> None:
 
     ################# KEYWORD-ENABLED TRANSCRIPTION PIPELINES #################
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "openai-transcription",
         OpenAITranscriptionPipeline,
         default_config={
@@ -646,7 +675,7 @@ def register_pipeline_aliases() -> None:
         description="OpenAI Whisper transcription with keyword boosting. Requires `OPENAI_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisper-tiny-oss-transcription",
         WhisperOSSTranscriptionPipeline,
         default_config={
@@ -658,7 +687,7 @@ def register_pipeline_aliases() -> None:
         description="Open-source OpenAI Whisper transcription (local)",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisper-base-oss-transcription",
         WhisperOSSTranscriptionPipeline,
         default_config={
@@ -670,7 +699,7 @@ def register_pipeline_aliases() -> None:
         description="Open-source OpenAI Whisper transcription (local)",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisper-large-v2-oss-transcription",
         WhisperOSSTranscriptionPipeline,
         default_config={
@@ -682,7 +711,7 @@ def register_pipeline_aliases() -> None:
         description="Open-source OpenAI Whisper transcription (local)",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisper-large-v3-oss-transcription",
         WhisperOSSTranscriptionPipeline,
         default_config={
@@ -694,7 +723,7 @@ def register_pipeline_aliases() -> None:
         description="Open-source OpenAI Whisper transcription (local)",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "whisper-turbo-oss-transcription",
         WhisperOSSTranscriptionPipeline,
         default_config={
@@ -706,7 +735,7 @@ def register_pipeline_aliases() -> None:
         description="Open-source OpenAI Whisper transcription (local)",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "deepgram-transcription",
         DeepgramTranscriptionPipeline,
         default_config={
@@ -717,7 +746,7 @@ def register_pipeline_aliases() -> None:
         description="Deepgram transcription with keyword boosting. Requires `DEEPGRAM_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "nemo-transcription-ctc-large",
         NeMoTranscriptionPipeline,
         default_config={
@@ -735,7 +764,7 @@ def register_pipeline_aliases() -> None:
         description="NeMo CTC transcription with context biasing for keyword spotting. Local model, no API key required.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "assemblyai-transcription",
         AssemblyAITranscriptionPipeline,
         default_config={
@@ -745,7 +774,7 @@ def register_pipeline_aliases() -> None:
         description="AssemblyAI transcription pipeline with keyword boosting support. Requires API key from https://www.assemblyai.com/. Set `ASSEMBLYAI_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "elevenlabs-transcription",
         ElevenLabsTranscriptionPipeline,
         default_config={
@@ -755,7 +784,7 @@ def register_pipeline_aliases() -> None:
         description="ElevenLabs transcription pipeline with keyterm prompting support. Requires API key from https://elevenlabs.io/. Set `ELEVENLABS_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "pyannote-transcription",
         PyannoteTranscriptionPipeline,
         default_config={
@@ -769,7 +798,7 @@ def register_pipeline_aliases() -> None:
 
     ################# SPEECH GENERATION PIPELINES #################
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "argmax-oss-speech-generation",
         ArgmaxOpenSourceSpeechGenerationPipeline,
         default_config={
@@ -791,9 +820,81 @@ def register_pipeline_aliases() -> None:
         ),
     )
 
+    ################# PII CLASSIFICATION PIPELINES #################
+    # Two systems, each asked one question per sample: does this turn give out PII (mask the whole turn)?
+    # Roblox PII v2 reads the turn as speaker `t` with the preceding turns as context; Privacy Filter tags
+    # spans in the turn and the turn counts as PII when any span lands in it.
+
+    _register_alias(
+        "roblox-pii-v2",
+        HuggingFaceRobloxPIIPipeline,
+        default_config={"out_dir": "./pii_results"},
+        description=(
+            "Roblox PII classifier v2 (PyTorch, Hub weights). The turn is speaker `t`, up to 16 preceding turns are "
+            "context, left-truncated to 512 tokens. PII when the giving head reaches 0.55 (the model card's threshold)."
+        ),
+    )
+
+    _register_alias(
+        "roblox-pii-v2-target-only",
+        HuggingFaceRobloxPIIPipeline,
+        default_config={"out_dir": "./pii_results", "context_turns": 0},
+        description="Roblox PII classifier v2 on the turn alone, no context (how the model card ran the other models).",
+    )
+
+    _register_alias(
+        "roblox-pii-v2-any-head",
+        HuggingFaceRobloxPIIPipeline,
+        default_config={
+            "out_dir": "./pii_results",
+            "heads": ["privacy_asking_for_pii", "privacy_giving_pii", "directing_users_off_platform"],
+        },
+        description=(
+            "Roblox PII classifier v2, flagged when asking (0.60), giving (0.55) or off-platform (0.10) fires: "
+            "the reading of the Roblox chat benchmark, whose unsafe rows carry any of the three labels."
+        ),
+    )
+
+    _register_alias(
+        "roblox-pii-v2-coreml",
+        CoreMLRobloxPIIPipeline,
+        default_config={"out_dir": "./pii_results"},
+        description=(
+            "Roblox PII classifier v2 as Sova ships it, the W8A16 Core ML bundle (macOS only; set SOVA_ROOT or "
+            "`-pc model_path=...`). Same context and giving-head reading as `roblox-pii-v2`."
+        ),
+    )
+
+    _register_alias(
+        "openai-privacy-filter",
+        HuggingFacePrivacyFilterPipeline,
+        default_config={"out_dir": "./pii_results"},
+        description=(
+            "OpenAI Privacy Filter (1.5B total / 50M active, needs transformers >= 5.6) on the turn alone. PII when any "
+            "token's most likely label is a PII label; the score is the highest per-token probability of not being `O`."
+        ),
+    )
+
+    _register_alias(
+        "openai-privacy-filter-context",
+        HuggingFacePrivacyFilterPipeline,
+        default_config={"out_dir": "./pii_results", "context_turns": 16},
+        description=(
+            "OpenAI Privacy Filter over up to 16 preceding turns plus the turn; only tokens inside the turn count, so it "
+            "sees the same context as `roblox-pii-v2`."
+        ),
+    )
+
+    _register_alias(
+        "constant-pii",
+        ConstantSafetyPipeline,
+        default_config={"out_dir": "./pii_results", "label": "unsafe"},
+        description="Masks every turn: recall 1 at the dataset's PII share, the F1 floor both models must beat.",
+    )
+
     ################# STREAMING TRANSCRIPTION PIPELINES #################
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "deepgram-streaming",
         DeepgramStreamingPipeline,
         default_config={
@@ -807,7 +908,7 @@ def register_pipeline_aliases() -> None:
         description="Deepgram streaming transcription pipeline. Requires API key from https://www.deepgram.com/. Set `DEEPGRAM_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "fireworks-streaming",
         FireworksStreamingPipeline,
         default_config={
@@ -821,7 +922,7 @@ def register_pipeline_aliases() -> None:
         description="Fireworks streaming transcription pipeline. Requires API key from https://www.fireworks.ai/. Set `FIREWORKS_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "gladia-streaming",
         GladiaStreamingPipeline,
         default_config={
@@ -834,7 +935,7 @@ def register_pipeline_aliases() -> None:
         description="Gladia streaming transcription pipeline. Requires API key from https://www.gladia.io/. Set `GLADIA_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "openai-streaming",
         OpenAIStreamingPipeline,
         default_config={
@@ -848,7 +949,7 @@ def register_pipeline_aliases() -> None:
         description="OpenAI streaming transcription pipeline. Requires API key from https://www.openai.com/. Set `OPENAI_API_KEY` env var.",
     )
 
-    PipelineRegistry.register_alias(
+    _register_alias(
         "assemblyai-streaming",
         AssemblyAIStreamingPipeline,
         default_config={

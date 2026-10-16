@@ -649,6 +649,110 @@ def register_dataset_aliases() -> None:
         description="TIMIT stitched dataset with very long silences for endpointing evals",
     )
 
+    ########## PII CLASSIFICATION ##########
+    # One question per row: does this chunk give out PII (mask the whole chunk)? Built at load time from the
+    # original releases; see `openbench.dataset.pii_benchmarks` and docs/pii-benchmark.md for each labeling rule.
+    pii = "openbench.dataset.pii_benchmarks"
+    pii_types = {PipelineType.SAFETY_CLASSIFICATION}
+    pii_aliases = [
+        (
+            "roblox-pii-chat",
+            "load_roblox_pii_chat",
+            {"variant": "all"},
+            "Roblox PII chat benchmark, 39,202 synthetic conversations; the target speaker `t` is unsafe when asking, "
+            "giving or off-platform is labeled (Apache-2.0).",
+        ),
+        (
+            "roblox-pii-chat-giving",
+            "load_roblox_pii_chat",
+            {"variant": "giving"},
+            "Roblox PII chat benchmark, the safe conversations against those labeled PRIVACY_GIVING_PII only.",
+        ),
+        (
+            "nemotron-pii",
+            "load_nemotron_pii",
+            {"unit": "document", "max_documents": 10000},
+            "Nemotron-PII test, a seeded 10,000 synthetic documents (every one holds PII, so only recall can move; "
+            "CC BY 4.0).",
+        ),
+        (
+            "nemotron-pii-sentences",
+            "load_nemotron_pii",
+            {"unit": "sentence", "max_documents": 2000},
+            "Nemotron-PII test, a seeded 2,000 documents split into sentences (about 31,000), each labeled by span "
+            "overlap, so clean sentences give the negatives the documents lack.",
+        ),
+        (
+            "openpii",
+            "load_openpii",
+            {"max_samples": 20000},
+            "OpenPII 1.5M validation, a seeded 20,000 multilingual documents (shuffle buffer), unsafe when masked "
+            "(99% are; ai4privacy's own licence).",
+        ),
+        (
+            "dialogpii",
+            "load_dialogpii",
+            {"version": "original"},
+            "DialogPII written dialogs, 11 languages, one row per turn, unsafe on a direct identifier (CC BY 4.0).",
+        ),
+        (
+            "dialogpii-asr",
+            "load_dialogpii",
+            {"version": "transcript"},
+            "DialogPII, the same dialogs rendered with TTS and transcribed with WhisperX, labels projected.",
+        ),
+        (
+            "dialogpii-en",
+            "load_dialogpii",
+            {"version": "original", "languages": ["EN"]},
+            "DialogPII written dialogs, English only.",
+        ),
+        (
+            "dialogpii-asr-en",
+            "load_dialogpii",
+            {"version": "transcript", "languages": ["EN"]},
+            "DialogPII WhisperX transcripts, English only.",
+        ),
+        (
+            "pii-trace",
+            "load_pii_trace",
+            {},
+            "PII-TRACE public release, 500 synthetic chats, one row per user turn (MIT).",
+        ),
+        (
+            "spokenwoz",
+            "load_spokenwoz",
+            {},
+            "SpokenWOZ test, 1,000 real spoken calls, one row per user turn, unsafe when it gives a profile value "
+            "(name, phone, ID, email, plate number; CC BY-NC 4.0).",
+        ),
+        (
+            "abcd",
+            "load_abcd",
+            {"split": "test"},
+            "ABCD test, customer-service chats, one row per customer turn, unsafe when it holds a scenario value "
+            "(name, email, phone, username, account or order id, street, zip; MIT).",
+        ),
+    ]
+    for alias, function, kwargs, description in pii_aliases:
+        DatasetRegistry.register_alias(
+            alias,
+            DatasetConfig(dataset_id=alias, split="test", loader=f"{pii}:{function}", loader_kwargs=kwargs),
+            supported_pipeline_types=pii_types,
+            description=description,
+        )
+        DatasetRegistry.register_alias(
+            f"{alias}-mini",
+            DatasetConfig(
+                dataset_id=f"{alias}-mini",
+                split="test",
+                loader=f"{pii}:{function}",
+                loader_kwargs={**kwargs, "max_samples": min(kwargs.get("max_samples") or 2000, 2000), "seed": 0},
+            ),
+            supported_pipeline_types=pii_types,
+            description=f"{description} Seeded 2,000-row subsample with the PII share kept.",
+        )
+
     # Local dataset to use with env variables to override with env vars
     # and allow easy testing of local datasets
     if os.getenv("LOCAL_DATASET_PATH") and os.getenv("LOCAL_DATASET_SPLIT"):

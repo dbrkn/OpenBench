@@ -43,12 +43,22 @@ class DatasetConfig(BaseModel):
             "The function signature should be `def transform(row: dict[str, Any]) -> dict[str, Any]` where the key is the post column mapping name and the value is the transformed column."
         ),
     )
+    loader: str | None = Field(
+        None,
+        description=(
+            "Dotted path `package.module:function` of a function returning a `datasets.Dataset`, for datasets that are "
+            "built at load time from their original sources. When set, `dataset_id` only names the dataset."
+        ),
+    )
+    loader_kwargs: dict[str, Any] = Field(default_factory=dict, description="Keyword arguments passed to `loader`.")
 
     def load(self) -> HfDataset:
         """Load dataset from config.
 
-        Auto-detects if dataset_id is a local directory path or a HuggingFace dataset ID.
+        Uses `loader` when set, otherwise auto-detects if dataset_id is a local directory path or a HuggingFace dataset ID.
         """
+        if self.loader is not None:
+            return self._load_from_loader()
         # Check if dataset_id is a local path
         dataset_path = Path(self.dataset_id)
         if dataset_path.exists() and dataset_path.is_dir():
@@ -56,12 +66,49 @@ class DatasetConfig(BaseModel):
         else:
             return self._load_huggingface()
 
+    def _load_from_loader(self) -> HfDataset:
+        """Build the dataset with the configured loader function."""
+        import importlib
+
+        module_name, _, function_name = self.loader.partition(":")
+        if not module_name or not function_name:
+            raise ValueError(f"loader must look like 'package.module:function', got {self.loader!r}")
+        loader = getattr(importlib.import_module(module_name), function_name)
+        ds = loader(**self.loader_kwargs)
+        return self._apply_common_transforms(ds)
+
+    def _apply_common_transforms(self, ds: HfDataset) -> HfDataset:
+        """Apply `num_samples`, `column_mapping` and `column_transforms`."""
+        if self.num_samples is not None:
+            ds = ds.take(self.num_samples)
+
+        if self.column_mapping is not None:
+            ds = ds.rename_columns(self.column_mapping)
+
+        if self.column_transforms is not None:
+            for col, transform in self.column_transforms.items():
+                ds = ds.map(transform)
+
+        return ds
+
     def _load_local(self) -> HfDataset:
-        """Load dataset from local directory."""
+        """Load dataset from local directory.
+
+        A directory written by `datasets` (`save_to_disk`) is loaded as is, with
+        `subset` selecting a sub-directory and `split` a split of a DatasetDict.
+        Any other directory is read with the audio-oriented local loader.
+        """
         from .local_dataset_loader import load_local_dataset
 
         split = self.split or "test"  # Default split
-        ds = load_local_dataset(dataset_dir=Path(self.dataset_id), split=split)
+        dataset_dir = Path(self.dataset_id)
+        if self.subset is not None and (dataset_dir / self.subset).is_dir():
+            dataset_dir = dataset_dir / self.subset
+
+        if self._is_saved_to_disk(dataset_dir):
+            ds = self._load_saved_to_disk(dataset_dir, split)
+        else:
+            ds = load_local_dataset(dataset_dir=dataset_dir, split=split)
 
         if self.num_samples is not None:
             ds = ds.take(self.num_samples)
@@ -74,6 +121,24 @@ class DatasetConfig(BaseModel):
                 ds = ds.map(transform)
 
         return ds
+
+    @staticmethod
+    def _is_saved_to_disk(dataset_dir: Path) -> bool:
+        """True for a directory written by `Dataset.save_to_disk` or `DatasetDict.save_to_disk`."""
+        return (dataset_dir / "dataset_dict.json").is_file() or (dataset_dir / "state.json").is_file()
+
+    @staticmethod
+    def _load_saved_to_disk(dataset_dir: Path, split: str) -> HfDataset:
+        from datasets import DatasetDict, load_from_disk
+
+        loaded = load_from_disk(str(dataset_dir))
+        if isinstance(loaded, DatasetDict):
+            if split not in loaded:
+                raise ValueError(
+                    f"Split '{split}' not found in {dataset_dir}; available splits: {list(loaded.keys())}"
+                )
+            return loaded[split]
+        return loaded
 
     def _load_huggingface(self) -> HfDataset:
         """Load dataset from HuggingFace Hub."""

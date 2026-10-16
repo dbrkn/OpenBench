@@ -19,12 +19,18 @@ from .data_models import (
     BenchmarkResult,
     DiarizationSampleResult,
     GlobalResult,
+    SafetySampleResult,
     SpeechGenerationSampleResult,
     TaskResult,
     TranscriptionSampleResult,
 )
 from .utils import change_directory, get_global_results
-from .wandb_logger import DiarizationWandbLogger, SpeechGenerationWandbLogger, TranscriptionWandbLogger
+from .wandb_logger import (
+    DiarizationWandbLogger,
+    SafetyWandbLogger,
+    SpeechGenerationWandbLogger,
+    TranscriptionWandbLogger,
+)
 
 
 logger = get_logger(__name__)
@@ -35,11 +41,14 @@ PIPELINE_TYPE_TO_SAMPLE_RESULT = {
     PipelineType.ORCHESTRATION: TranscriptionSampleResult,
     PipelineType.STREAMING_TRANSCRIPTION: TranscriptionSampleResult,
     PipelineType.SPEECH_GENERATION: SpeechGenerationSampleResult,
+    PipelineType.SAFETY_CLASSIFICATION: SafetySampleResult,
 }
 
 
 class ProcessingResult(NamedTuple):
-    sample_result: DiarizationSampleResult | TranscriptionSampleResult | SpeechGenerationSampleResult
+    sample_result: (
+        DiarizationSampleResult | TranscriptionSampleResult | SpeechGenerationSampleResult | SafetySampleResult
+    )
     task_results: list[TaskResult]
     sample_id: int
     metrics_string: str
@@ -67,6 +76,7 @@ class BenchmarkRunner:
             PipelineType.ORCHESTRATION: TranscriptionWandbLogger,
             PipelineType.STREAMING_TRANSCRIPTION: TranscriptionWandbLogger,
             PipelineType.SPEECH_GENERATION: SpeechGenerationWandbLogger,
+            PipelineType.SAFETY_CLASSIFICATION: SafetyWandbLogger,
         }
 
     def _get_metrics(self, pipeline: Pipeline) -> dict[str, BaseMetric]:
@@ -108,6 +118,9 @@ class BenchmarkRunner:
         # produced by the TTS step.
         if pipeline.pipeline_type == PipelineType.SPEECH_GENERATION:
             audio_duration = output.prediction.duration
+        elif pipeline.pipeline_type == PipelineType.SAFETY_CLASSIFICATION and not sample.has_audio:
+            # Text in, no audio: the speed factor of this task is not meaningful
+            audio_duration = 0.0
         else:
             audio_duration = sample.get_audio_duration()
         prediction_time = output.prediction_time
