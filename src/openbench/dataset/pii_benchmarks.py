@@ -47,7 +47,7 @@ logger = get_logger(__name__)
 MAX_CONTEXT_TURNS = 16
 UNSAFE, SAFE = "unsafe", "safe"
 # Bump when a labeling rule changes, so built datasets in the cache are rebuilt
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 
 FEATURES = Features(
     {
@@ -60,6 +60,7 @@ FEATURES = Features(
         "language": Value("string"),
         "speaker": Value("string"),
         "conversation": [{"speaker": Value("string"), "text": Value("string"), "target": Value("bool")}],
+        "pii_spans": [{"start": Value("int32"), "end": Value("int32"), "type": Value("string")}],
     }
 )
 
@@ -155,6 +156,7 @@ def make_row(
     language: str = "en",
     speaker: str = "",
     conversation: list[dict[str, Any]] | None = None,
+    pii_spans: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": id,
@@ -166,11 +168,16 @@ def make_row(
         "language": language,
         "speaker": speaker,
         "conversation": conversation or [],
+        "pii_spans": [
+            {"start": int(span["start"]), "end": int(span["end"]), "type": str(span["type"])}
+            for span in pii_spans or []
+            if span.get("start", -1) >= 0
+        ],
     }
 
 
 def turn_rows(
-    turns: list[tuple[str, str, list[str]]],
+    turns: list[tuple[str, str, list[dict[str, Any]]]],
     is_target: Iterable[bool],
     *,
     id_prefix: str,
@@ -180,13 +187,15 @@ def turn_rows(
 ) -> list[dict[str, Any]]:
     """One row per target turn: its PII types decide the label, up to MAX_CONTEXT_TURNS earlier turns are context.
 
-    `turns` holds (speaker, text, PII types found in the turn); a turn with no
-    types is a negative.
+    `turns` holds (speaker, text, the PII found in the turn as `{"type", "start",
+    "end"}` with character offsets into the text, -1 when the source has none);
+    a turn with nothing found is a negative.
     """
     rows = []
-    for index, ((speaker, text, types), target) in enumerate(zip(turns, is_target)):
+    for index, ((speaker, text, found), target) in enumerate(zip(turns, is_target)):
         if not target or not text.strip():
             continue
+        types = [item["type"] for item in found]
         context = turns[max(0, index - MAX_CONTEXT_TURNS) : index]
         conversation = [{"speaker": s, "text": t, "target": False} for s, t, _ in context if t.strip()]
         conversation.append({"speaker": speaker, "text": text, "target": True})
@@ -201,9 +210,15 @@ def turn_rows(
                 language=language,
                 speaker=speaker,
                 conversation=conversation,
+                pii_spans=found,
             )
         )
     return rows
+
+
+def found(kind: str, start: int = -1, end: int = -1) -> dict[str, Any]:
+    """One piece of PII in a turn; offsets -1 when the source gives none."""
+    return {"type": kind, "start": start, "end": end}
 
 
 def finish(rows: list[dict[str, Any]], name: str, max_samples: int | None, seed: int) -> Dataset:
@@ -294,14 +309,31 @@ def nemotron_rows(record: dict[str, Any], unit: str) -> list[dict[str, Any]]:
     if unit == "document":
         labels = [span["label"] for span in spans]
         category = Counter(labels).most_common(1)[0][0] if labels else ""
-        return [make_row(id=record["uid"], text=text, unsafe=bool(spans), category=category, **meta)]
+        gold = [found(span["label"], span["start"], span["end"]) for span in spans]
+        return [make_row(id=record["uid"], text=text, unsafe=bool(spans), category=category, pii_spans=gold, **meta)]
     rows = []
     for index, chunk in enumerate(sentence_spans(text)):
         labels = chunk_labels(chunk, spans)
         category = Counter(labels).most_common(1)[0][0] if labels else ""
-        sentence = text[chunk[0] : chunk[1]].strip()
+        raw = text[chunk[0] : chunk[1]]
+        sentence = raw.strip()
+        offset = chunk[0] + len(raw) - len(raw.lstrip())
+        gold = [
+            found(
+                span["label"], max(span["start"], offset) - offset, min(span["end"], offset + len(sentence)) - offset
+            )
+            for span in spans
+            if span["start"] < chunk[1] and span["end"] > chunk[0]
+        ]
         rows.append(
-            make_row(id=f"{record['uid']}:{index}", text=sentence, unsafe=bool(labels), category=category, **meta)
+            make_row(
+                id=f"{record['uid']}:{index}",
+                text=sentence,
+                unsafe=bool(labels),
+                category=category,
+                pii_spans=gold,
+                **meta,
+            )
         )
     return rows
 
@@ -343,7 +375,8 @@ def load_openpii(
         language = (record.get("language") or "").lower()
         if wanted and language not in wanted:
             continue
-        labels = [span["label"] for span in record.get("privacy_mask") or []]
+        mask = record.get("privacy_mask") or []
+        labels = [span["label"] for span in mask]
         rows.append(
             make_row(
                 id=str(record["uid"]),
@@ -353,6 +386,7 @@ def load_openpii(
                 source="openpii",
                 source_category=record.get("region") or "",
                 language=language,
+                pii_spans=[found(span["label"], span["start"], span["end"]) for span in mask],
             )
         )
         if max_samples is not None and len(rows) >= max_samples:
@@ -370,7 +404,11 @@ def dialogpii_dialog_rows(
         (
             str(turn.get("speaker") or ""),
             str(turn.get("text") or ""),
-            [a["type"] for a in turn.get("annotations") or [] if a["type"] in pii_types],
+            [
+                found(a["type"], a.get("start", -1), a.get("end", -1))
+                for a in turn.get("annotations") or []
+                if a["type"] in pii_types
+            ],
         )
         for turn in dialog["dialog"]["turns"]
     ]
@@ -425,10 +463,10 @@ def load_dialogpii(
 
 
 def pii_trace_rows(record: dict[str, Any]) -> list[dict[str, Any]]:
-    by_turn: dict[int, list[str]] = {}
+    by_turn: dict[int, list[dict[str, Any]]] = {}
     for span in record["spans"]:
         if span["source"] == "user":
-            by_turn.setdefault(span["turn"], []).append(span["label"])
+            by_turn.setdefault(span["turn"], []).append(found(span["label"], span["start"], span["end"]))
     turns, targets = [], []
     for turn in sorted(record["turns"], key=lambda t: t["turn"]):
         turns.append(("user", turn["user"] or "", by_turn.get(turn["turn"], [])))
@@ -465,7 +503,8 @@ def spokenwoz_rows(dialog_id: str, dialog: dict[str, Any]) -> list[dict[str, Any
     turns, targets = [], []
     for turn in dialog["log"]:
         speaker = "user" if turn["tag"] == "user" else "agent"
-        turns.append((speaker, turn.get("text") or "", spokenwoz_profile_slots(turn) if speaker == "user" else []))
+        slots = spokenwoz_profile_slots(turn) if speaker == "user" else []
+        turns.append((speaker, turn.get("text") or "", [found(slot) for slot in slots]))
         targets.append(speaker == "user")
     return turn_rows(turns, targets, id_prefix=dialog_id, source="spokenwoz", language="en")
 
@@ -486,29 +525,38 @@ def _digits(text: str) -> str:
     return re.sub(r"\D", "", text)
 
 
-def abcd_value_types(text: str, scenario: dict[str, Any]) -> list[str]:
-    """The scenario fields whose values appear in a customer turn."""
-    lowered = text.lower()
-    digits = _digits(text)
-    found = []
+def _occurrences(pattern: str, text: str) -> list[tuple[int, int]]:
+    return [(m.start(), m.end()) for m in re.finditer(pattern, text, flags=re.IGNORECASE)]
+
+
+def abcd_value_spans(text: str, scenario: dict[str, Any]) -> list[dict[str, Any]]:
+    """Where the scenario's personal and order values appear in a customer turn."""
+    spans = []
     for section, field in ABCD_VALUE_FIELDS:
         value = str((scenario.get(section) or {}).get(field) or "").strip().lower()
         if not value:
             continue
         if field == "customer_name":
+            whole = _occurrences(re.escape(value), text)
             parts = value.split()
-            hit = value in lowered or (
-                len(parts) > 1 and all(re.search(rf"\b{re.escape(p)}\b", lowered) for p in parts)
-            )
+            if not whole and len(parts) > 1:
+                pieces = [_occurrences(rf"\b{re.escape(part)}\b", text) for part in parts]
+                whole = [span for piece in pieces for span in piece] if all(pieces) else []
+            hits = whole
         elif field == "phone":
-            hit = len(_digits(value)) >= 7 and _digits(value) in digits
+            digits = _digits(value)
+            hits = _occurrences(r"\D{0,3}".join(digits), text) if len(digits) >= 7 else []
         elif field == "zip_code":
-            hit = re.search(rf"\b{re.escape(value)}\b", lowered) is not None
+            hits = _occurrences(rf"\b{re.escape(value)}\b", text)
         else:
-            hit = len(value) >= 4 and value in lowered
-        if hit:
-            found.append(field)
-    return found
+            hits = _occurrences(re.escape(value), text) if len(value) >= 4 else []
+        spans.extend(found(field, start, end) for start, end in hits)
+    return spans
+
+
+def abcd_value_types(text: str, scenario: dict[str, Any]) -> list[str]:
+    """The scenario fields whose values appear in a customer turn."""
+    return list(dict.fromkeys(span["type"] for span in abcd_value_spans(text, scenario)))
 
 
 def abcd_rows(conversation: dict[str, Any]) -> list[dict[str, Any]]:
@@ -517,7 +565,7 @@ def abcd_rows(conversation: dict[str, Any]) -> list[dict[str, Any]]:
     for speaker, text in conversation["original"]:
         if speaker == "action":
             continue
-        turns.append((speaker, text, abcd_value_types(text, scenario) if speaker == "customer" else []))
+        turns.append((speaker, text, abcd_value_spans(text, scenario) if speaker == "customer" else []))
         targets.append(speaker == "customer")
     return turn_rows(
         turns,

@@ -7,7 +7,7 @@ import numpy as np
 from pydantic import Field
 
 from ...pipeline_prediction import SafetyLabel, SafetyPrediction
-from .common import SafetyConfig, SafetyInput
+from .common import ContextSpeakers, SafetyConfig, SafetyInput
 from .coreml_common import threshold_shifted_probability
 
 
@@ -52,6 +52,9 @@ class RobloxPIIConfig(SafetyConfig):
             "truncation); 0 scores the target turns alone."
         ),
     )
+    context_speakers: ContextSpeakers = Field(
+        "all", description="`target` keeps only the speaker under test in the context (an owner-only transcript)."
+    )
 
 
 def validate_heads(config: RobloxPIIConfig) -> list[int]:
@@ -61,11 +64,12 @@ def validate_heads(config: RobloxPIIConfig) -> list[int]:
     return [PII_HEADS.index(h) for h in config.heads]
 
 
-def render_input(sample: SafetyInput, context_turns: int) -> str | None:
+def render_input(sample: SafetyInput, config: RobloxPIIConfig) -> str | None:
     """The formatted window for one sample, or None when the target turns are empty."""
     if not sample.require_text().strip():
         return None
-    return format_conversation([(speaker, text) for speaker, text, _ in sample.window(context_turns)])
+    window = sample.window(config.context_turns, config.context_speakers)
+    return format_conversation([(speaker, text) for speaker, text, _ in window])
 
 
 def verdict(probabilities: np.ndarray, config: RobloxPIIConfig, head_indices: list[int]) -> SafetyPrediction:

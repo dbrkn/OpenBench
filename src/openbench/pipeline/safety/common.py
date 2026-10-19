@@ -21,6 +21,9 @@ logger = get_logger(__name__)
 GuardOutputStyle = Literal["auto", "safe_unsafe", "yes_no", "wildguard", "qwen3guard", "json"]
 
 
+ContextSpeakers = Literal["all", "target"]
+
+
 class SafetyConfig(PipelineConfig):
     """Base config for text safety classification pipelines."""
 
@@ -63,12 +66,16 @@ class SafetyInput(BaseModel):
             raise ValueError(f"Sample {self.audio_name} has no text; transcribe the dataset or run an audio pipeline")
         return self.text or ""
 
-    def window(self, context_turns: int) -> list[tuple[str, str, bool]]:
+    def window(self, context_turns: int, speakers: str = "all") -> list[tuple[str, str, bool]]:
         """The target turns with up to `context_turns` turns before the first of them (none: the target turns only).
 
-        Without a conversation the text is one target turn of speaker `t`.
+        `speakers="target"` keeps only the speaker under test (`t`) in the context,
+        the view of a recorder that transcribes its owner alone. Without a
+        conversation the text is one target turn of speaker `t`.
         """
         turns = self.conversation or [("t", self.require_text(), True)]
+        if speakers == "target":
+            turns = [turn for turn in turns if turn[2] or turn[0] == "t"]
         target_indices = [i for i, turn in enumerate(turns) if turn[2]]
         if not target_indices:
             return [("t", self.require_text(), True)]

@@ -8,10 +8,12 @@ from openbench.dataset.dataset_safety import conversation_turns
 from openbench.dataset.pii_benchmarks import (
     MAX_CONTEXT_TURNS,
     abcd_rows,
+    abcd_value_spans,
     abcd_value_types,
     chunk_labels,
     dialogpii_dialog_rows,
     finish,
+    found,
     nemotron_rows,
     pii_trace_rows,
     roblox_row,
@@ -25,7 +27,7 @@ from openbench.dataset.pii_benchmarks import (
 def test_turn_rows_label_each_target_turn_and_keep_earlier_turns_as_context():
     turns = [
         ("agent", "your name?", []),
-        ("user", "it's ann lee", ["name"]),
+        ("user", "it's ann lee", [found("name", 5, 12)]),
         ("agent", "thanks", []),
         ("user", "ok", []),
     ]
@@ -35,6 +37,7 @@ def test_turn_rows_label_each_target_turn_and_keep_earlier_turns_as_context():
     assert rows[0]["category"] == "name" and rows[1]["category"] == ""
     assert rows[1]["conversation"][-1] == {"speaker": "user", "text": "ok", "target": True}
     assert [t["target"] for t in rows[1]["conversation"]] == [False, False, False, True]
+    assert rows[0]["pii_spans"] == [{"start": 5, "end": 12, "type": "name"}] and rows[1]["pii_spans"] == []
 
 
 def test_turn_rows_cap_the_context():
@@ -74,6 +77,8 @@ def test_nemotron_sentences_take_the_labels_of_overlapping_spans():
     assert [chunk_labels(c, spans) for c in chunks] == [["first_name"], [], ["phone_number"]]
     record = {"uid": "u1", "text": text, "spans": str(spans), "domain": "d"}
     assert [r["label"] for r in nemotron_rows(record, "sentence")] == ["unsafe", "safe", "unsafe"]
+    rows = nemotron_rows(record, "sentence")
+    assert [[r["text"][s["start"] : s["end"]] for s in r["pii_spans"]] for r in rows] == [["Jason"], [], ["555-0101"]]
     (document,) = nemotron_rows(record, "document")
     assert document["label"] == "unsafe" and document["text"] == text
 
@@ -104,6 +109,7 @@ def test_pii_trace_labels_user_turns_and_keeps_the_assistant_as_context():
     }
     rows = pii_trace_rows(record)
     assert [(r["text"], r["label"]) for r in rows] == [("my email is a@b.co", "unsafe"), ("thanks", "safe")]
+    assert rows[0]["pii_spans"] == [{"start": 12, "end": 18, "type": "private_email"}]
     assert [t["speaker"] for t in rows[1]["conversation"]] == ["user", "assistant", "user"]
 
 
@@ -124,6 +130,7 @@ def test_spokenwoz_counts_profile_informs_not_acknowledgements():
     }
     rows = spokenwoz_rows("MUL0001", dialog)
     assert [(r["text"], r["label"]) for r in rows] == [("hello .", "safe"), ("9 1 6 .", "unsafe")]
+    assert rows[1]["pii_spans"] == []  # turn-level labels only
 
 
 def test_abcd_matches_scenario_values_in_customer_turns():
@@ -141,6 +148,12 @@ def test_abcd_matches_scenario_values_in_customer_turns():
     assert abcd_value_types("it's 977-625-2661", scenario) == ["phone"]
     assert set(abcd_value_types("cminh730@email.com, zip 75227", scenario)) == {"email", "username", "zip_code"}
     assert abcd_value_types("I got the wrong size.", scenario) == []
+    text = "Minh, Crystal. Phone 977 625 2661"
+    assert [(s["type"], text[s["start"] : s["end"]]) for s in abcd_value_spans(text, scenario)] == [
+        ("customer_name", "Crystal"),
+        ("customer_name", "Minh"),
+        ("phone", "977 625 2661"),
+    ]
     conversation = {
         "convo_id": 7,
         "scenario": scenario,
@@ -152,7 +165,7 @@ def test_abcd_matches_scenario_values_in_customer_turns():
 
 def test_finish_keeps_the_pii_share_when_subsampling():
     rows = turn_rows(
-        [("u", f"t{i}", ["x"] if i % 4 == 0 else []) for i in range(400)],
+        [("u", f"t{i}", [found("x")] if i % 4 == 0 else []) for i in range(400)],
         [True] * 400,
         id_prefix="d",
         source="x",
@@ -171,7 +184,7 @@ def test_conversation_turns_rename_the_target_speaker_and_survive_the_dataset(tm
     (tmp_path / "pii_unit_loader.py").write_text(
         "from openbench.dataset.pii_benchmarks import finish, turn_rows\n"
         "def unit_loader():\n"
-        "    turns = [('agent', 'name?', []), ('user', 'ann lee', ['name'])]\n"
+        "    turns = [('agent', 'name?', []), ('user', 'ann lee', [{'type': 'name', 'start': 0, 'end': 7}])]\n"
         "    return finish(turn_rows(turns, [False, True], id_prefix='d', source='x', language='en'), 'u', None, 0)\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))

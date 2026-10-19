@@ -57,7 +57,7 @@ class HuggingFaceRobloxPIIPipeline(Pipeline):
         logger.info(f"{config.model_id} on {device} ({config.dtype}), heads {config.heads}")
 
         def classify(sample: SafetyInput) -> SafetyPrediction:
-            text = render_input(sample, config.context_turns)
+            text = render_input(sample, config)
             if text is None:
                 return empty_text_prediction()
             encoded = tokenizer(text, truncation=True, max_length=SEQUENCE_LENGTH, return_tensors="pt").to(device)

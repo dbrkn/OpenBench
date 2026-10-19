@@ -843,6 +843,23 @@ def register_pipeline_aliases() -> None:
     )
 
     _register_alias(
+        "roblox-pii-v2-owner-context",
+        HuggingFaceRobloxPIIPipeline,
+        default_config={"out_dir": "./pii_results", "context_speakers": "target"},
+        description=(
+            "Roblox PII classifier v2 with only the speaker's own earlier turns as context (up to 16), what an "
+            "owner-only recorder such as fil transcribes."
+        ),
+    )
+
+    _register_alias(
+        "roblox-pii-v2-owner-context-2",
+        HuggingFaceRobloxPIIPipeline,
+        default_config={"out_dir": "./pii_results", "context_speakers": "target", "context_turns": 2},
+        description="Roblox PII classifier v2 with the speaker's own last 2 turns as context.",
+    )
+
+    _register_alias(
         "roblox-pii-v2-any-head",
         HuggingFaceRobloxPIIPipeline,
         default_config={
@@ -883,6 +900,20 @@ def register_pipeline_aliases() -> None:
             "OpenAI Privacy Filter over up to 16 preceding turns plus the turn; only tokens inside the turn count, so it "
             "sees the same context as `roblox-pii-v2`."
         ),
+    )
+
+    _register_alias(
+        "openai-privacy-filter-owner-context",
+        HuggingFacePrivacyFilterPipeline,
+        default_config={"out_dir": "./pii_results", "context_turns": 16, "context_speakers": "target"},
+        description="OpenAI Privacy Filter with only the speaker's own earlier turns (up to 16) before the turn.",
+    )
+
+    _register_alias(
+        "openai-privacy-filter-owner-context-2",
+        HuggingFacePrivacyFilterPipeline,
+        default_config={"out_dir": "./pii_results", "context_turns": 2, "context_speakers": "target"},
+        description="OpenAI Privacy Filter with the speaker's own last 2 turns before the turn.",
     )
 
     _register_alias(

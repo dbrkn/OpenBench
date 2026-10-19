@@ -48,10 +48,20 @@ def test_window_keeps_context_before_the_first_target_turn():
     assert lone.window(16) == [("t", "hello", True)]
 
 
+def test_owner_only_window_drops_the_other_speakers():
+    assert sample().window(16, "target") == [CONVERSATION[1], CONVERSATION[3]]
+    with_history = [("t", "my number is", False), ("s1", "go on", False), ("t", "555 0101", True)]
+    assert sample(with_history, "555 0101").window(16, "target") == [with_history[0], with_history[2]]
+    assert sample(with_history, "555 0101").window(0, "target") == [with_history[2]]
+
+
 def test_render_input_formats_the_window_as_speaker_t():
-    assert render_input(sample(), 0) == INSTRUCTION_PREFIX + "\n\nt: it's 555 </s> t: 0101"
-    assert render_input(sample(), 16).endswith("s1: your number? </s> t: it's 555 </s> s1: and? </s> t: 0101")
-    assert render_input(SafetyInput(audio_name="x", text="  "), 16) is None
+    alone, full = RobloxPIIConfig(context_turns=0), RobloxPIIConfig()
+    assert render_input(sample(), alone) == INSTRUCTION_PREFIX + "\n\nt: it's 555 </s> t: 0101"
+    assert render_input(sample(), full).endswith("s1: your number? </s> t: it's 555 </s> s1: and? </s> t: 0101")
+    owner = RobloxPIIConfig(context_speakers="target")
+    assert render_input(sample(), owner) == INSTRUCTION_PREFIX + "\n\nt: it's 555 </s> t: 0101"
+    assert render_input(SafetyInput(audio_name="x", text="  "), full) is None
 
 
 def test_verdict_reads_only_the_selected_heads():
@@ -76,10 +86,16 @@ def test_render_window_ranges_cover_only_target_turns():
     assert text == "it's 555\n0101" and [text[a:b] for a, b in ranges] == ["it's 555", "0101"]
 
 
-def test_spans_from_tokens_keeps_target_tokens_and_merges_runs():
-    text = "s1: call 555\nt: 555 0101 ok"
-    ranges = [(16, len(text))]
+def test_spans_from_tokens_maps_target_tokens_to_the_sample_text():
+    # window "s1: call 555\nt: 555 0101 ok", one target range; the sample's text is "555 0101 ok"
+    ranges = [(16, 27)]
     offsets = [(0, 2), (4, 8), (9, 12), (16, 19), (20, 24), (25, 27)]
     labels = ["O", "O", "S-private_phone", "B-private_phone", "E-private_phone", "O"]
-    assert spans_from_tokens(offsets, labels, text, ranges) == [("private_phone", "555 0101")]
+    assert spans_from_tokens(offsets, labels, ranges) == [(0, 8, "private_phone")]
+    # two target turns joined by a newline in the sample's text: "it's 555\n0101"
+    text, ranges = render_window(sample().window(16))
+    offsets = [(text.index("555"), text.index("555") + 3), (text.index("0101"), text.index("0101") + 4)]
+    spans = spans_from_tokens(offsets, ["S-private_phone", "S-private_phone"], ranges)
+    target_text = "it's 555\n0101"
+    assert [target_text[a:b] for a, b, _ in spans] == ["555", "0101"]
     assert entity_type("I-account_number") == "account_number" and entity_type("O") == "O"

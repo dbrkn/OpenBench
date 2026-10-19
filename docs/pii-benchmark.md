@@ -1,9 +1,15 @@
 # PII benchmark: Roblox PII classifier v2 vs OpenAI Privacy Filter
 
-One question per row: **does this chunk give out PII, so that masking the whole chunk is right?** That is the
-decision a chunk-masking layer over an always-on transcript makes. A row is a turn (or, for document sets, a
-document or a sentence); `label` is `unsafe` when it holds PII. Every dataset is built at load time from its
-original release (`src/openbench/dataset/pii_benchmarks.py`); nothing is re-hosted.
+One question per row: **does this segment hold PII, so that it should be censored?** That is the decision a
+censoring layer over an always-on, owner-only transcript (fil) makes. A row is a segment: a turn of the speaker
+under test (or, for document sets, a document or a sentence); `label` is `unsafe` when it holds PII, and
+`pii_spans` gives the PII's character offsets when the source has them. Every dataset is built at load time from
+its original release (`src/openbench/dataset/pii_benchmarks.py`); nothing is re-hosted.
+
+The setting this models: only the owner's speech is transcribed, so the realistic context is the owner's own
+earlier segments (`*-owner-context*`); the other speakers' turns are kept in the rows only to measure what a
+two-sided transcript would add. A censored segment stays recoverable (behind device authentication), so a false
+mask costs a tap and a miss shows PII: **recall comes first, read at a fixed false-mask rate.**
 
 ## Systems
 
@@ -11,15 +17,24 @@ original release (`src/openbench/dataset/pii_benchmarks.py`); nothing is re-host
 |---|---|---|
 | `roblox-pii-v2` | `Roblox/roblox-pii-classifier-v2` (XLM-R large, PyTorch) | the turn as speaker `t` after up to 16 earlier turns, left-truncated to 512 tokens; PII when the giving head reaches 0.55 (card threshold) |
 | `roblox-pii-v2-target-only` | same | the turn alone (how the Roblox card fed the other models) |
+| `roblox-pii-v2-owner-context` / `-owner-context-2` | same | the speaker's own earlier turns only (up to 16 / the last 2), as an owner-only recorder sees them |
 | `roblox-pii-v2-any-head` | same | asking 0.60 / giving 0.55 / off-platform 0.10, any firing; only for `roblox-pii-chat` |
 | `roblox-pii-v2-coreml` | Sova's W8A16 Core ML bundle (macOS) | as `roblox-pii-v2`; for parity with the shipped asset |
 | `openai-privacy-filter` | `openai/privacy-filter` (1.5B total / 50M active, bf16) | the turn alone; PII when any token's probability of not being `O` reaches 0.5; that probability (max over the turn) is the ROC score |
-| `openai-privacy-filter-context` | same | the same 16 earlier turns as `speaker: text` lines; only tokens inside the target turn count |
+| `openai-privacy-filter-owner-context` / `-owner-context-2` | same | the speaker's own earlier turns only (up to 16 / the last 2); only tokens inside the target turn count |
+| `openai-privacy-filter-context` | same | 16 earlier turns of every speaker as `speaker: text` lines; only tokens inside the target turn count |
 | `constant-pii` | none | masks everything: recall 1, precision = the PII share; the F1 floor |
+
+Roblox PII v2 is a conversation-level classifier: trained to answer "did speaker `t` give PII anywhere in this
+chat?", with the earlier turns as context. Used per segment it is off-label, and with context it keeps flagging the
+segments after a disclosure. Privacy Filter is a token tagger: it marks the PII words themselves, so it can censor
+just the span; its `raw_output` lists the spans as `[start, end, type]` in the segment's text.
 
 Privacy Filter is read through the `transformers` token-classification head (per-token argmax and
 probabilities), not OpenAI's constrained Viterbi decoder and its operating points, so its spans can be more
-fragmented than in the `opf` tooling; the per-turn verdict depends only on whether any token is PII.
+fragmented than in the `opf` tooling; the per-segment verdict depends only on whether any token is PII. It runs on
+CUDA (bf16) or the CPU (float32), never MPS by default: its mixture-of-experts layers took 1.0-1.3 s per segment on
+MPS against 75 ms on an M-series CPU.
 
 ## Datasets
 
@@ -59,8 +74,10 @@ Labeling rules worth knowing before reading a number:
   order id, street, zip) in customer turns; a value the customer gives in another form is missed (a false negative
   in the labels).
 - Rows are turns of the speaker under test, so with context the classifier also sees that speaker's earlier
-  turns. Roblox's giving head stays high on turns after a disclosure (`docs/design/00-sova-architecture.md`
-  A11 in the Sova repo), which shows up as precision lost to context.
+  turns. Roblox's giving head stays high on turns after a disclosure (it answers for the speaker, not the
+  segment), which shows up as clean segments censored.
+- SpokenWOZ has turn labels but no character spans (its span indices refer to ASR word tokens that do not line up
+  with the text), so it has no character-level scores; Roblox's chat benchmark has neither.
 
 ## Running on a GPU machine
 
@@ -77,9 +94,15 @@ JOBS=8 scripts/pii/run.sh                     # the full sets; pii_results/repor
 
 `run.sh` builds every dataset once (cached under `~/.cache/openbench/pii/built/`), then runs each
 (pipeline, dataset) pair as its own `openbench-cli evaluate` process, `JOBS` at a time, round-robin over the
-visible GPUs; a finished pair is skipped on a rerun. `PIPELINES=` and `DATASETS=` narrow it. The report adds the
-false-mask rate (the share of PII-free turns that get masked, from `constant-pii`'s precision) and the mean
-milliseconds per turn.
+visible GPUs; a finished pair is skipped on a rerun. `PIPELINES=` and `DATASETS=` narrow it.
+
+`scripts/pii/report.py` joins every run's predictions with the dataset rows and writes `report.md` / `report.json`:
+
+- per segment: recall, the false-mask rate (clean segments censored), precision, **recall at a 1 / 5 / 10 / 20 %
+  false-mask rate** (the bar set on the clean segments' scores, so the two models are compared at the same cost),
+  ROC AUC and milliseconds per segment;
+- per character, where every PII row has gold spans: the share of PII characters censored and of clean characters
+  censored. Roblox censors a flagged segment whole; Privacy Filter censors its spans.
 
 A single pair by hand:
 

@@ -11,17 +11,18 @@ ROOT="$(pwd)"
 PII_ENV="$(cd "${PII_ENV:-.venv-pii}" && pwd)"
 OUT="$(mkdir -p "${OUT:-pii_results}" && cd "${OUT:-pii_results}" && pwd)"
 JOBS="${JOBS:-4}"
-PIPELINES="${PIPELINES:-roblox-pii-v2 roblox-pii-v2-target-only openai-privacy-filter openai-privacy-filter-context constant-pii}"
+PIPELINES="${PIPELINES:-roblox-pii-v2-target-only roblox-pii-v2-owner-context-2 roblox-pii-v2-owner-context roblox-pii-v2 openai-privacy-filter openai-privacy-filter-owner-context-2 openai-privacy-filter-owner-context openai-privacy-filter-context constant-pii}"
 DATASETS="${DATASETS:-roblox-pii-chat-giving nemotron-pii nemotron-pii-sentences openpii dialogpii dialogpii-asr pii-trace spokenwoz abcd}"
 METRICS="-m recall -m precision -m f1 -m accuracy -m mcc -m roc_auc -m category_recall"
 export WANDB_MODE="${WANDB_MODE:-disabled}" TOKENIZERS_PARALLELISM=false PYTHONWARNINGS=ignore
 GPUS="$("$PII_ENV/bin/python" -c 'import torch; print(max(1, torch.cuda.device_count()))')"
 
-# Build the dataset caches once, before the jobs race for them.
+# Build the dataset caches once, before the jobs race for them. The hard exit skips interpreter shutdown, where a
+# streamed dataset's background threads can hang the process after the build is saved.
 for dataset in $DATASETS; do
   name="$dataset"; [ "${MINI:-0}" = 1 ] && name="$dataset-mini"
   echo "building $name"
-  "$PII_ENV/bin/python" -W ignore -c "from openbench.dataset import DatasetRegistry as R; print(len(R.get_alias_config('$name').load()), 'rows')" \
+  "$PII_ENV/bin/python" -W ignore -c "from openbench.dataset import DatasetRegistry as R; import os, sys; print(len(R.get_alias_config('$name').load()), 'rows'); sys.stdout.flush(); os._exit(0)" \
     2>/dev/null | tail -1 || echo "warning: could not pre-build $name"
 done
 

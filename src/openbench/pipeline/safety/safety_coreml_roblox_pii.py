@@ -64,7 +64,7 @@ class CoreMLRobloxPIIPipeline(Pipeline):
         model = load_compiled_model(config.model_path, config.compute_units)
 
         def classify(sample: SafetyInput) -> SafetyPrediction:
-            text = render_input(sample, config.context_turns)
+            text = render_input(sample, config)
             if text is None:
                 return empty_text_prediction()
             encoded = tokenizer(
