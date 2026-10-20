@@ -57,7 +57,7 @@ def outcome(label: bool, flagged: bool) -> str:
     return {(True, True): "tp", (True, False): "fn", (False, True): "fp", (False, False): "tn"}[(label, flagged)]
 
 
-def build(out: Path, subset_size: int = 1500, seed: int = 0) -> dict[str, list[dict]]:
+def build(out: Path, subset_size: int = 1500, seed: int = 0, only: set[str] | None = None) -> dict[str, list[dict]]:
     import pyarrow.parquet as pq
 
     from openbench.dataset import DatasetRegistry
@@ -69,8 +69,11 @@ def build(out: Path, subset_size: int = 1500, seed: int = 0) -> dict[str, list[d
             jobs[manifest["dataset"]][manifest["pipeline"]] = manifest_path.parent / "predictions.parquet"
     viewer = out / "viewer"
     viewer.mkdir(exist_ok=True)
-    subsets: dict[str, list[dict]] = {}
+    subset_path = viewer / "subset.json"
+    subsets: dict[str, list[dict]] = json.loads(subset_path.read_text()) if only and subset_path.exists() else {}
     for dataset, by_pipeline in sorted(jobs.items()):
+        if only is not None and dataset not in only:
+            continue
         rows = DatasetRegistry.get_alias_config(dataset).load()
         predictions = {
             pipeline: {row["id"]: row for row in pq.read_table(path).to_pylist()}
@@ -112,21 +115,25 @@ def build(out: Path, subset_size: int = 1500, seed: int = 0) -> dict[str, list[d
             wide.append(record)
         import pyarrow as pa
 
-        pq.write_table(pa.Table.from_pylist(wide), viewer / f"{dataset}.parquet")
+        # The Hub table leaves out the candidate spans below each bar (`__raw`); they stay in the job's parquet
+        hub_rows = [{k: v for k, v in record.items() if not k.endswith("__raw")} for record in wide]
+        pq.write_table(pa.Table.from_pylist(hub_rows), viewer / f"{dataset}.parquet")
 
         # A uniform random sample, so the metrics the page recomputes on any subset of it are unbiased
         rng = random.Random(seed)
         picked = wide if len(wide) <= subset_size else rng.sample(wide, subset_size)
         subsets[dataset] = [{k: v for k, v in record.items() if not k.endswith("__censored")} for record in picked]
         print(f"{dataset}: {len(wide)} rows, {len(pipelines)} pipelines, {len(picked)} in the viewer sample")
-    (viewer / "subset.json").write_text(json.dumps(subsets, ensure_ascii=False))
+    subset_path.write_text(json.dumps(subsets, ensure_ascii=False))
     return subsets
 
 
-def push(out: Path, repo: str) -> None:
+def push(out: Path, repo: str, only: set[str] | None = None) -> None:
     from datasets import Dataset
 
     for path in sorted((out / "viewer").glob("*.parquet")):
+        if only is not None and path.stem not in only:
+            continue
         Dataset.from_parquet(str(path)).push_to_hub(repo, config_name=path.stem, split="test", private=True)
         print(f"pushed {path.stem} -> {repo} (private)")
 
