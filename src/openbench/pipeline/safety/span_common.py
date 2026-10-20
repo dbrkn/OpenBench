@@ -28,6 +28,7 @@ class SpanPipelineConfig(SafetyConfig):
     context_speakers: ContextSpeakers = Field(
         "all", description="`target` keeps only the speaker under test in the context (an owner-only transcript)."
     )
+    batch_size: int = Field(16, ge=1, description="Segments per forward pass in `classify_batch`.")
 
 
 def render_window(window: list[tuple[str, str, bool]]) -> tuple[str, list[tuple[int, int]]]:
@@ -82,6 +83,29 @@ def target_spans(
         if mapped is not None:
             kept.append((mapped[1], mapped[2], kind, score))
     return kept
+
+
+def encode_batch(tokenizer, texts: list[str], max_tokens: int):
+    """Tokenize a batch with padding and character offsets; returns (encoded tensors, per-item offsets).
+
+    Offsets are cut to each item's real length, so padding never reaches a decoder.
+    """
+    encoded = tokenizer(
+        texts, truncation=True, max_length=max_tokens, padding=True, return_offsets_mapping=True, return_tensors="pt"
+    )
+    offset_mapping = encoded.pop("offset_mapping").tolist()
+    lengths = encoded["attention_mask"].sum(dim=1).tolist()
+    if tokenizer.padding_side == "left":
+        offsets = [[tuple(o) for o in row[len(row) - n :]] for row, n in zip(offset_mapping, lengths)]
+    else:
+        offsets = [[tuple(o) for o in row[:n]] for row, n in zip(offset_mapping, lengths)]
+    return encoded, offsets
+
+
+def item_logits(logits, index: int, length: int, padding_side: str):
+    """One item's [length, C] logits out of a padded batch."""
+    row = logits[index]
+    return row[row.shape[0] - length :] if padding_side == "left" else row[:length]
 
 
 def span_prediction(

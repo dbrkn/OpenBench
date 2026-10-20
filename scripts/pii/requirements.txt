@@ -22,4 +22,6 @@ pyannote.database
 pyannote.metrics
 jiwer
 pydub>=0.25.1,<0.26
+faker
+pandas
 pytest

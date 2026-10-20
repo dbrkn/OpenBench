@@ -22,7 +22,15 @@ from ...dataset.dataset_safety import SafetySample
 from ...pipeline_prediction import SafetyLabel, SafetyPrediction
 from ..base import Pipeline, PipelineType, register_pipeline
 from .common import SafetyInput, SafetyOutput, dtype_kwargs, empty_text_prediction
-from .span_common import SpanPipelineConfig, entity_type, overlaps, render_window, to_target_offsets
+from .span_common import (
+    SpanPipelineConfig,
+    encode_batch,
+    entity_type,
+    item_logits,
+    overlaps,
+    render_window,
+    to_target_offsets,
+)
 
 
 __all__ = ["HuggingFacePrivacyFilterConfig", "HuggingFacePrivacyFilterPipeline", "render_window", "spans_from_tokens"]
@@ -100,25 +108,11 @@ class HuggingFacePrivacyFilterPipeline(Pipeline):
         outside_id = next(i for i, name in id2label.items() if name == "O")
         logger.info(f"{config.model_id} on {device} ({dtype}), context turns {config.context_turns}")
 
-        def classify(sample: SafetyInput) -> SafetyPrediction:
-            if not sample.require_text().strip():
-                return empty_text_prediction()
-            text, ranges = render_window(sample.window(config.context_turns, config.context_speakers))
-            encoded = tokenizer(
-                text,
-                truncation=True,
-                max_length=config.max_tokens,
-                return_offsets_mapping=True,
-                return_tensors="pt",
-            )
-            offsets = [tuple(pair) for pair in encoded.pop("offset_mapping")[0].tolist()]
-            with torch.inference_mode():
-                logits = model(**encoded.to(device)).logits[0].float()
-            probabilities = torch.softmax(logits, dim=-1).cpu()
+        def verdict(text_offsets, ranges, logits) -> SafetyPrediction:
+            probabilities = torch.softmax(logits.float(), dim=-1).cpu()
             predicted = probabilities.argmax(dim=-1).tolist()
             not_outside = (1.0 - probabilities[:, outside_id]).tolist()
-
-            in_target = [i for i, offset in enumerate(offsets) if overlaps(offset, ranges)]
+            in_target = [i for i, offset in enumerate(text_offsets) if overlaps(offset, ranges)]
             if not in_target:
                 return SafetyPrediction(label=SafetyLabel.SAFE, unsafe_score=0.0, raw_output=json.dumps({"spans": []}))
             top = max(in_target, key=lambda i: not_outside[i])
@@ -126,13 +120,36 @@ class HuggingFacePrivacyFilterPipeline(Pipeline):
             is_unsafe = unsafe_score >= config.threshold
             top_type = probabilities[top].clone()
             top_type[outside_id] = -1.0
-            spans = spans_from_tokens(offsets, [id2label[i] for i in predicted], ranges)
+            spans = spans_from_tokens(text_offsets, [id2label[i] for i in predicted], ranges)
             return SafetyPrediction(
                 label=SafetyLabel.UNSAFE if is_unsafe else SafetyLabel.SAFE,
                 unsafe_score=unsafe_score,
                 category=entity_type(id2label[int(top_type.argmax())]) if is_unsafe else None,
                 raw_output=json.dumps({"spans": spans}),
             )
+
+        def classify_batch(samples: list[SafetyInput]) -> list[SafetyPrediction]:
+            results: list[SafetyPrediction | None] = [None] * len(samples)
+            work = []
+            for index, sample in enumerate(samples):
+                if not sample.require_text().strip():
+                    results[index] = empty_text_prediction()
+                else:
+                    work.append((index, *render_window(sample.window(config.context_turns, config.context_speakers))))
+            for start in range(0, len(work), config.batch_size):
+                chunk = work[start : start + config.batch_size]
+                encoded, offsets = encode_batch(tokenizer, [text for _, text, _ in chunk], config.max_tokens)
+                with torch.inference_mode():
+                    logits = model(**encoded.to(device)).logits
+                for row, (index, _, ranges) in enumerate(chunk):
+                    item = item_logits(logits, row, len(offsets[row]), tokenizer.padding_side)
+                    results[index] = verdict(offsets[row], ranges, item)
+            return results
+
+        self.classify_batch = classify_batch
+
+        def classify(sample: SafetyInput) -> SafetyPrediction:
+            return classify_batch([sample])[0]
 
         return classify
 

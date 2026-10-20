@@ -18,6 +18,7 @@ from .safety import (
     HuggingFacePIITracerPipeline,
     HuggingFacePrivacyFilterPipeline,
     HuggingFaceRobloxPIIPipeline,
+    RegexPIIPipeline,
 )
 
 
@@ -916,6 +917,31 @@ def register_pipeline_aliases() -> None:
         HuggingFacePrivacyFilterPipeline,
         default_config={"out_dir": "./pii_results", "context_turns": 2, "context_speakers": "target"},
         description="OpenAI Privacy Filter with the speaker's own last 2 turns before the turn.",
+    )
+
+    for suffix, extra, note in (
+        ("", {}, "on the turn alone"),
+        (
+            "-owner-context-2",
+            {"context_turns": 2, "context_speakers": "target"},
+            "with the speaker's own last 2 turns",
+        ),
+    ):
+        _register_alias(
+            f"openmed-privacy-filter-multilingual-v2{suffix}",
+            HuggingFacePrivacyFilterPipeline,
+            default_config={"out_dir": "./pii_results", "model_id": "OpenMed/privacy-filter-multilingual-v2", **extra},
+            description=(
+                "OpenMed's fine-tune of OpenAI Privacy Filter (54 types, 16 languages incl. Turkish; Apache-2.0; "
+                f"trained on ai4privacy, Nemotron, Gretel and Privy-style data), {note}."
+            ),
+        )
+
+    _register_alias(
+        "regex-pii",
+        RegexPIIPipeline,
+        default_config={"out_dir": "./pii_results"},
+        description="Patterns only (e-mail written or spoken, URL, phone, Luhn card, SSN, IBAN, IPv4): the free floor.",
     )
 
     _register_alias(

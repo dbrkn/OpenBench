@@ -8,6 +8,7 @@ from .safety_gliner import GLiNERPIIConfig, GLiNERPIIPipeline
 from .safety_hf_pii_tracer import HuggingFacePIITracerConfig, HuggingFacePIITracerPipeline
 from .safety_hf_privacy_filter import HuggingFacePrivacyFilterConfig, HuggingFacePrivacyFilterPipeline
 from .safety_hf_roblox_pii import HuggingFaceRobloxPIIConfig, HuggingFaceRobloxPIIPipeline
+from .safety_regex_pii import RegexPIIPipeline
 
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "HuggingFacePrivacyFilterPipeline",
     "HuggingFaceRobloxPIIConfig",
     "HuggingFaceRobloxPIIPipeline",
+    "RegexPIIPipeline",
 ]

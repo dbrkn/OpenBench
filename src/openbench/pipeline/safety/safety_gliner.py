@@ -36,21 +36,30 @@ class GLiNERPIIConfig(SpanPipelineConfig):
     device: str | None = Field(None, description="torch device; defaults to CUDA, else CPU.")
 
 
-def gliner_v1_spans(model: Any, text: str, labels: list[str], floor: float) -> list[tuple[int, int, str, float]]:
-    return [
-        (int(e["start"]), int(e["end"]), str(e["label"]), float(e["score"]))
-        for e in model.predict_entities(text, labels, threshold=floor)
-    ]
+Span = tuple[int, int, str, float]
 
 
-def gliner2_spans(model: Any, text: str, labels: list[str], floor: float) -> list[tuple[int, int, str, float]]:
-    result = model.extract_entities(text, labels, threshold=floor, include_confidence=True, include_spans=True)
+def gliner_v1_spans(
+    model: Any, texts: list[str], labels: list[str], floor: float, batch_size: int
+) -> list[list[Span]]:
+    batches = model.inference(texts, labels, threshold=floor, batch_size=batch_size)
+    return [[(int(e["start"]), int(e["end"]), str(e["label"]), float(e["score"])) for e in found] for found in batches]
+
+
+def gliner2_entities(result: dict) -> list[Span]:
     spans = []
     for label, entities in (result.get("entities") or {}).items():
         for entity in entities or []:
             if isinstance(entity, dict) and entity.get("start") is not None:
                 spans.append((int(entity["start"]), int(entity["end"]), str(label), float(entity["confidence"])))
     return spans
+
+
+def gliner2_spans(model: Any, texts: list[str], labels: list[str], floor: float, batch_size: int) -> list[list[Span]]:
+    results = model.batch_extract_entities(
+        texts, labels, batch_size=batch_size, threshold=floor, include_confidence=True, include_spans=True
+    )
+    return [gliner2_entities(result) for result in results]
 
 
 @register_pipeline
@@ -77,14 +86,29 @@ class GLiNERPIIPipeline(Pipeline):
         model.eval()
         logger.info(f"{config.model_id} ({config.library}) on {device}, {len(config.labels)} labels")
 
+        def classify_batch(samples: list[SafetyInput]) -> list[SafetyPrediction]:
+            results: list[SafetyPrediction | None] = [None] * len(samples)
+            work = []
+            for index, sample in enumerate(samples):
+                if not sample.require_text().strip():
+                    results[index] = empty_text_prediction()
+                else:
+                    work.append((index, *render_window(sample.window(config.context_turns, config.context_speakers))))
+            if work:
+                found = extract(
+                    model, [text for _, text, _ in work], config.labels, config.score_floor, config.batch_size
+                )
+                for (index, _, ranges), spans in zip(work, found):
+                    spans = target_spans(spans, ranges)
+                    score = max((span[3] for span in spans), default=0.0)
+                    kept = [span for span in spans if span[3] >= config.threshold]
+                    results[index] = span_prediction(kept, score, config.threshold)
+            return results
+
+        self.classify_batch = classify_batch
+
         def classify(sample: SafetyInput) -> SafetyPrediction:
-            if not sample.require_text().strip():
-                return empty_text_prediction()
-            text, ranges = render_window(sample.window(config.context_turns, config.context_speakers))
-            spans = target_spans(extract(model, text, config.labels, config.score_floor), ranges)
-            score = max((span[3] for span in spans), default=0.0)
-            kept = [span for span in spans if span[3] >= config.threshold]
-            return span_prediction(kept, score, config.threshold)
+            return classify_batch([sample])[0]
 
         return classify
 

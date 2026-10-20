@@ -690,6 +690,18 @@ def register_dataset_aliases() -> None:
             "(99% are; ai4privacy's own licence).",
         ),
         (
+            "nemotron-pii-sentences-50k",
+            "load_nemotron_pii",
+            {"unit": "sentence", "max_documents": 3500, "max_samples": 50000},
+            "Nemotron-PII test, a seeded 3,500 documents split into sentences, at most 50,000 (PII share kept).",
+        ),
+        (
+            "openpii-50k",
+            "load_openpii",
+            {"max_samples": 50000, "per_language_cap": 2500},
+            "OpenPII 1.5M validation, at most 2,500 documents per language and 50,000 in all (seeded shuffle buffer).",
+        ),
+        (
             "dialogpii",
             "load_dialogpii",
             {"version": "original"},
@@ -734,10 +746,78 @@ def register_dataset_aliases() -> None:
             "(name, email, phone, username, account or order id, street, zip; MIT).",
         ),
     ]
+    more = "openbench.dataset.pii_benchmarks_more"
+    more_aliases = [
+        (
+            "tab",
+            "load_tab",
+            {"identifiers": "direct"},
+            "TAB test, real ECHR judgments cut into segments; gold = DIRECT identifiers (union of annotators; MIT).",
+        ),
+        (
+            "tab-quasi",
+            "load_tab",
+            {"identifiers": "direct+quasi"},
+            "TAB test, gold = DIRECT and QUASI identifiers (what an anonymiser must mask).",
+        ),
+        (
+            "pii-bench-ru",
+            "load_pii_bench_ru",
+            {},
+            "hivetrace PII-Bench, Russian, 9 domains incl. chat dialogues (Apache-2.0).",
+        ),
+        (
+            "gretel-finance",
+            "load_gretel_finance",
+            {},
+            "Gretel synthetic financial documents test, 7 languages, segments (LLM + GLiNER labels; Apache-2.0).",
+        ),
+        ("gretel-en", "load_gretel_en", {}, "Gretel PII masking en v1 test, 47 domains (Apache-2.0)."),
+        (
+            "ai4privacy-400k",
+            "load_ai4privacy",
+            {"version": "400k", "per_language": 8000, "max_samples": 50000},
+            "ai4privacy 400k validation, 6 languages, at most 8,000 each (ai4privacy licence; Privacy Filter trained on ai4privacy).",
+        ),
+        (
+            "ai4privacy-500k",
+            "load_ai4privacy",
+            {"version": "500k", "per_language": 6250, "max_samples": 50000},
+            "ai4privacy open 500k validation, 8 languages incl. Hindi and Telugu, at most 6,250 each.",
+        ),
+        ("spy", "load_spy", {}, "SPY legal questions and medical consultations, Faker-filled, segments (CC BY 4.0)."),
+        ("privy", "load_privy", {}, "Privy protocol traces (JSON, XML, HTML, SQL), small test split (MIT)."),
+        (
+            "e3jsi-multi",
+            "load_e3jsi",
+            {},
+            "E3-JSI synthetic multilingual PII NER, 7 languages incl. Greek and Slovene (MIT).",
+        ),
+        (
+            "urchade-mistral",
+            "load_urchade_mistral",
+            {"max_samples": 20000},
+            "urchade synthetic PII NER (Mistral), a seeded 20,000: the training set of urchade's GLiNER PII.",
+        ),
+        (
+            "spokenwoz-dev",
+            "load_spokenwoz_dev",
+            {},
+            "SpokenWOZ dev, 500 real spoken calls, one row per user turn (CC BY-NC 4.0).",
+        ),
+    ]
+    pii_aliases += [
+        (alias, f"{more}:{function}", kwargs, description) for alias, function, kwargs, description in more_aliases
+    ]
     for alias, function, kwargs, description in pii_aliases:
         DatasetRegistry.register_alias(
             alias,
-            DatasetConfig(dataset_id=alias, split="test", loader=f"{pii}:{function}", loader_kwargs=kwargs),
+            DatasetConfig(
+                dataset_id=alias,
+                split="test",
+                loader=function if ":" in function else f"{pii}:{function}",
+                loader_kwargs=kwargs,
+            ),
             supported_pipeline_types=pii_types,
             description=description,
         )
@@ -746,7 +826,7 @@ def register_dataset_aliases() -> None:
             DatasetConfig(
                 dataset_id=f"{alias}-mini",
                 split="test",
-                loader=f"{pii}:{function}",
+                loader=function if ":" in function else f"{pii}:{function}",
                 loader_kwargs={**kwargs, "max_samples": min(kwargs.get("max_samples") or 2000, 2000), "seed": 0},
             ),
             supported_pipeline_types=pii_types,

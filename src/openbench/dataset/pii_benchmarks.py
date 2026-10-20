@@ -47,7 +47,7 @@ logger = get_logger(__name__)
 MAX_CONTEXT_TURNS = 16
 UNSAFE, SAFE = "unsafe", "safe"
 # Bump when a labeling rule changes, so built datasets in the cache are rebuilt
-BUILD_VERSION = 2
+BUILD_VERSION = 3
 
 FEATURES = Features(
     {
@@ -363,18 +363,30 @@ def load_nemotron_pii(
 
 @cached_build
 def load_openpii(
-    max_samples: int | None = 20_000, languages: list[str] | None = None, seed: int = 0, split: str = "validation"
+    max_samples: int | None = 20_000,
+    languages: list[str] | None = None,
+    seed: int = 0,
+    split: str = "validation",
+    per_language_cap: int | None = None,
 ) -> Dataset:
-    """OpenPII documents, streamed through a seeded shuffle buffer; `max_samples=None` reads the whole split."""
+    """OpenPII documents, streamed through a seeded shuffle buffer; `max_samples=None` reads the whole split.
+
+    `per_language_cap` keeps at most that many documents per language, so a capped sample covers every language
+    instead of mirroring the split's mix.
+    """
     from datasets import load_dataset
 
     wanted = {language.lower() for language in languages} if languages else None
     records = load_dataset(OPENPII_REPO, split=split, streaming=True).shuffle(seed=seed, buffer_size=20_000)
     rows = []
+    per_language: Counter = Counter()
     for record in records:
         language = (record.get("language") or "").lower()
         if wanted and language not in wanted:
             continue
+        if per_language_cap is not None and per_language[language] >= per_language_cap:
+            continue
+        per_language[language] += 1
         mask = record.get("privacy_mask") or []
         labels = [span["label"] for span in mask]
         rows.append(
