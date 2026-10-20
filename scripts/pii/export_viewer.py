@@ -47,6 +47,7 @@ def main(out: Path) -> None:
                         "pii_chars": short((r.get("chars") or [None, None])[0]),
                         "clean_chars": short((r.get("chars") or [None, None])[1]),
                         "ms": short(r.get("ms_p50"), 2),
+                        "device": r.get("device") or "",
                     }
                     for pipeline, r in by_pipeline.items()
                 },

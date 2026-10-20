@@ -337,7 +337,7 @@
           <div class="metric"><div class="v">${pct(m.false_mask)}</div><div class="k">clean segments masked</div></div>
           <div class="metric"><div class="v">${pct(m.pii_chars)}</div><div class="k">PII characters censored</div></div>
           <div class="metric"><div class="v">${pct(m.clean_chars)}</div><div class="k">clean characters censored</div></div>
-          <div class="metric"><div class="v">${m.ms == null ? "–" : m.ms.toFixed(1)}</div><div class="k">ms per segment (p50, A100)</div></div>
+          <div class="metric"><div class="v">${m.ms == null ? "–" : m.ms.toFixed(1)}</div><div class="k">ms per segment (p50${m.device ? ", " + esc(m.device.replace(/^NVIDIA /, "")) : ""})</div></div>
         </div></div>`;
     };
     const ranked = Object.entries(ds.models).filter(([p]) => p !== "constant-pii").sort((x, y) => (y[1].recall5 ?? -1) - (x[1].recall5 ?? -1));
