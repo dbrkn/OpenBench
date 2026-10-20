@@ -23,6 +23,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 MAX_TURNS_BEFORE = 4
 MAX_TURN_CHARS = 400
+# A published page version holds at most 64 MB: 1,000 segments per dataset and candidates (spans below a model's bar)
+# kept only from this score up keep all 20 datasets with every model under it
+SAMPLE = 1000
+CANDIDATE_FLOOR = 0.25
 
 
 def short(value, digits: int = 4):
@@ -80,6 +84,7 @@ def main(out: Path) -> None:
     (web / "data" / "summary.json").write_text(json.dumps({"datasets": summary}, separators=(",", ":")))
 
     for dataset, rows in subsets.items():
+        rows = rows[:SAMPLE]  # build_viewer's sample is already a uniform random draw, so a prefix stays uniform
         names = sorted({k.split("__")[0] for row in rows for k in row if k.endswith("__verdict")})
         gold_types = sorted({span[2] for row in rows for span in json.loads(row.get("gold_spans") or "[]")})
         gold_index = {kind: i for i, kind in enumerate(gold_types)}
@@ -109,9 +114,21 @@ def main(out: Path) -> None:
                     continue
                 parsed = parse(row.get(f"{name}__raw") or "")
                 spans = (
-                    [[s, e, type_index[name][k], round(sc, 3)] for s, e, k, sc in parsed[0]] if parsed is not None else []
+                    [
+                        [s, e, type_index[name][k], round(sc, 3)]
+                        for s, e, k, sc in parsed[0]
+                        if sc >= parsed[1] or sc >= CANDIDATE_FLOOR
+                    ]
+                    if parsed is not None
+                    else []
                 )
-                predictions.append([1 if row[f"{name}__verdict"] == "unsafe" else 0, short(row.get(f"{name}__score") or 0.0, 3), spans])
+                predictions.append(
+                    [
+                        1 if row[f"{name}__verdict"] == "unsafe" else 0,
+                        short(row.get(f"{name}__score") or 0.0, 3),
+                        spans,
+                    ]
+                )
             compact.append(
                 {
                     "id": row["id"],

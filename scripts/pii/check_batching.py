@@ -43,6 +43,7 @@ def differences(pipeline, inputs, tolerance: float) -> list[tuple[int, float, fl
             found.append((index, a.unsafe_score, b.unsafe_score))
     return found
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dataset", default="abcd-mini")

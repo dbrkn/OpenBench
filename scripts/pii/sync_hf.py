@@ -9,7 +9,7 @@ Every `--every` minutes, when new jobs have finished since the last pass, it reb
 done so far, rebuilds the viewer tables of the datasets those jobs belong to, and uploads:
 
 - `runs/`: each job's manifest.json, predictions.parquet, log.txt (and errors.json), the report (report.md,
-  report.json, tables/*.csv), the dataset build list and the batching check;
+  report.json, tables/*.csv), the dataset build list, the batching check, and the viewer page with its data;
 - one dataset config per benchmark dataset: the wide per-segment table (text, gold spans, gold-censored text,
   and per pipeline its verdict, score, spans, censored text and outcome), for the Hub viewer and SQL console.
 
@@ -39,6 +39,8 @@ RUN_FILES = [
     "tables/*.csv",
     "datasets.txt",
     "batching_check.txt",
+    "viewer/web/index.html",
+    "viewer/web/data/*.json",
 ]
 
 
@@ -96,7 +98,17 @@ def main() -> None:
                 print(f"synced {len(changed)} datasets in {time.time() - started:.0f} s", flush=True)
             except Exception as error:  # a failed pass is retried on the next one
                 print(f"sync failed: {error!r}", flush=True)
-        if ended and not changed:
+        if ended:
+            # One last upload of everything, so the files the run's final step wrote (the full report, the viewer
+            # page and its data) reach the Hub even when no job finished since the previous pass
+            api.upload_folder(
+                folder_path=str(args.out),
+                path_in_repo="runs",
+                repo_id=args.repo,
+                repo_type="dataset",
+                allow_patterns=RUN_FILES,
+                commit_message="runs: final",
+            )
             print("run finished and synced", flush=True)
             return
         time.sleep(args.every * 60)
