@@ -16,6 +16,7 @@ GPUS="$("$PII_ENV/bin/python" -c 'import torch; print(max(1, torch.cuda.device_c
 WORKERS=$((GPUS * JOBS_PER_GPU))
 PIPELINE_ARGS=()
 [ -n "${PIPELINES:-}" ] && PIPELINE_ARGS=(--pipelines $PIPELINES)
+[ -n "${BATCH_SIZE:-}" ] && PIPELINE_ARGS+=(--batch-size "$BATCH_SIZE")
 
 echo "building datasets"
 "$PII_ENV/bin/python" scripts/pii/run_full.py --build-only | tee "$OUT/datasets.txt"
