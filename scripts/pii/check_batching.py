@@ -10,7 +10,6 @@ verdicts in a batched run. Exits non-zero when any pipeline differs on any of th
 """
 
 import argparse
-import json
 import sys
 
 from openbench.dataset import DatasetRegistry, SafetyDataset
@@ -18,17 +17,31 @@ from openbench.pipeline import PipelineRegistry
 from openbench.pipeline.safety.common import SafetyInput
 
 
+def same_spans(a: str | None, b: str | None, tolerance: float) -> bool:
+    """Span boundaries and types must match exactly; span scores within `tolerance`."""
+    from openbench.pipeline.safety.span_common import parse_spans
+
+    pa, pb = parse_spans(a), parse_spans(b)
+    if pa is None or pb is None:
+        return (a or "") == (b or "")
+    (sa, bar_a), (sb, bar_b) = pa, pb
+    if bar_a != bar_b or len(sa) != len(sb):
+        return False
+    return all(x[:3] == y[:3] and abs(x[3] - y[3]) <= tolerance for x, y in zip(sorted(sa), sorted(sb)))
+
+
 def differences(pipeline, inputs, tolerance: float) -> list[tuple[int, float, float]]:
     single = [pipeline.pipeline(item) for item in inputs]
     batch = pipeline.classify_batch(inputs)
     found = []
     for index, (a, b) in enumerate(zip(single, batch)):
-        spans_a = json.loads(a.raw_output or '{"spans": []}')
-        spans_b = json.loads(b.raw_output or '{"spans": []}')
-        if a.label != b.label or abs((a.unsafe_score or 0) - (b.unsafe_score or 0)) > tolerance or spans_a != spans_b:
+        if (
+            a.label != b.label
+            or abs((a.unsafe_score or 0) - (b.unsafe_score or 0)) > tolerance
+            or not same_spans(a.raw_output, b.raw_output, tolerance)
+        ):
             found.append((index, a.unsafe_score, b.unsafe_score))
     return found
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
