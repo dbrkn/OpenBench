@@ -71,8 +71,8 @@
   .layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 18px; align-items: start; }
   @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 
-  aside.rail { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 14px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
-  @media (max-width: 900px) { aside.rail { position: static; } }
+  aside.rail { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 14px; align-content: start; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - env(safe-area-inset-top, 0px) - 24px); max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  @media (max-width: 900px) { aside.rail { position: static; max-height: none; overflow: visible; } }
   .field { display: grid; gap: 5px; }
   .field label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
   select, input[type="search"] { width: 100%; font: 13px var(--sans); color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; }
