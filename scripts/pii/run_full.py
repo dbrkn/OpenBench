@@ -77,6 +77,13 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=None, help="Override every span pipeline's batch size.")
     parser.add_argument("--device", default=None, help="Override the pipelines' device (cuda, cpu, mps).")
+    parser.add_argument(
+        "--dtype",
+        default="float32",
+        help="Weights dtype for the transformer pipelines (Privacy Filter, OpenMed, PII-Tracer). float32 by default: "
+        "in bf16 a batch's shape moved scores by up to 0.04 (verdicts and spans unchanged); float32 matches the "
+        "one-segment run exactly.",
+    )
     parser.add_argument("--build-only", action="store_true", help="Build the dataset caches and exit.")
     args = parser.parse_args()
 
@@ -90,6 +97,8 @@ def main() -> None:
 
     mine = [p for i, p in enumerate(args.pipelines) if i % args.num_workers == args.worker]
     overrides = {"device": args.device} if args.device else {}
+    if args.dtype:
+        overrides["dtype"] = args.dtype  # ignored by pipelines without a dtype field
     for pipeline in mine:
         print(f"[worker {args.worker}] {pipeline}", flush=True)
         try:

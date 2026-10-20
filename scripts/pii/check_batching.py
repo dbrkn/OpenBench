@@ -37,12 +37,15 @@ def main() -> None:
     parser.add_argument("--samples", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--tolerance", type=float, default=2e-3)
+    parser.add_argument(
+        "--dtype", default="float32", help="Passed to pipelines that have a dtype (as in run_full.py)."
+    )
     args = parser.parse_args()
     rows = SafetyDataset(DatasetRegistry.get_alias_config(args.dataset).load())
     inputs = [SafetyInput.from_sample(sample) for _, sample in zip(range(args.samples), rows)]
     failed = False
     for alias in args.pipelines:
-        pipeline = PipelineRegistry.create_pipeline(alias, {"batch_size": args.batch_size})
+        pipeline = PipelineRegistry.create_pipeline(alias, {"batch_size": args.batch_size, "dtype": args.dtype})
         if not hasattr(pipeline, "classify_batch"):
             print(f"skip {alias}: no batch path")
             continue
