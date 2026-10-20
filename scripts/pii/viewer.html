@@ -1,0 +1,465 @@
+<title>Redaction Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #f3f5f8;
+    --panel: #ffffff;
+    --ink: #171a21;
+    --ink-2: #4a5160;
+    --ink-3: #7a8191;
+    --line: #dfe3ea;
+    --line-2: #eceff4;
+    --a: #0f766e;
+    --a-tint: #d7efec;
+    --b: #86198f;
+    --b-tint: #f3dcf5;
+    --gold: #c98a04;
+    --gold-tint: #fbefd2;
+    --bar: #22262f;
+    --bar-ink: #e9ecf2;
+    --ok: #1f7a4d;
+    --ok-tint: #dcf1e5;
+    --miss: #b4321f;
+    --miss-tint: #f8e0dc;
+    --over: #a15c07;
+    --over-tint: #f6e7cf;
+    --focus: #2563eb;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #12151b; --panel: #1a1e26; --ink: #e8ebf1; --ink-2: #b2b8c4; --ink-3: #848b99;
+      --line: #2c323d; --line-2: #232832; --a: #2fb3a6; --a-tint: #123a37; --b: #d27ad9; --b-tint: #3a1d3d;
+      --gold: #e5a92a; --gold-tint: #3b2f12; --bar: #cfd5df; --bar-ink: #161a20;
+      --ok: #4cc488; --ok-tint: #143526; --miss: #ef7a66; --miss-tint: #3d1d18; --over: #e2a24a; --over-tint: #3a2a12;
+      --focus: #7aa7ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #12151b; --panel: #1a1e26; --ink: #e8ebf1; --ink-2: #b2b8c4; --ink-3: #848b99;
+    --line: #2c323d; --line-2: #232832; --a: #2fb3a6; --a-tint: #123a37; --b: #d27ad9; --b-tint: #3a1d3d;
+    --gold: #e5a92a; --gold-tint: #3b2f12; --bar: #cfd5df; --bar-ink: #161a20;
+    --ok: #4cc488; --ok-tint: #143526; --miss: #ef7a66; --miss-tint: #3d1d18; --over: #e2a24a; --over-tint: #3a2a12;
+    --focus: #7aa7ff;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--ground); color: var(--ink); font: 14px/1.5 var(--sans); padding-inline: 16px; padding-block: 18px 40px; }
+  .wrap { max-width: 1320px; margin: 0 auto; display: grid; gap: 18px; }
+  h1, h2, h3 { font-family: var(--cond); font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: 0.005em; }
+  h1 { font-size: 26px; line-height: 1.15; }
+  h2 { font-size: 17px; }
+  .muted { color: var(--ink-2); }
+  .tiny { font-size: 12px; color: var(--ink-3); }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); font-weight: 500; }
+
+  header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+  header.top p { margin: 4px 0 0; max-width: 70ch; color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--ink-2); align-items: center; }
+  .legend i { display: inline-block; vertical-align: -2px; margin-right: 6px; }
+  .sw-gold { width: 22px; height: 12px; background: var(--gold-tint); border-bottom: 2px solid var(--gold); }
+  .sw-bar { width: 22px; height: 12px; background: var(--bar); border-radius: 2px; }
+  .sw-over { width: 22px; height: 12px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--over) 0 3px, transparent 3px 6px); border: 1px solid var(--over); }
+  .sw-leak { width: 22px; height: 12px; border-bottom: 2px wavy var(--miss); }
+
+  .layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  aside.rail { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 14px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+  @media (max-width: 900px) { aside.rail { position: static; } }
+  .field { display: grid; gap: 5px; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  select, input[type="search"] { width: 100%; font: 13px var(--sans); color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; }
+  select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .ab-tag { display: inline-block; width: 18px; height: 18px; border-radius: 4px; color: #fff; font: 600 11px/18px var(--cond); text-align: center; margin-right: 6px; vertical-align: 1px; }
+  .ab-tag.a { background: var(--a); } .ab-tag.b { background: var(--b); }
+  :root[data-theme="dark"] .ab-tag, .ab-tag { color: var(--panel); }
+  .swap { justify-self: start; font: 500 12px var(--sans); color: var(--ink-2); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .swap:hover { color: var(--ink); border-color: var(--ink-3); }
+
+  main { display: grid; gap: 14px; min-width: 0; }
+  .summary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 14px; }
+  .summary-head { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+  .summary-head .facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .vs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 640px) { .vs { grid-template-columns: minmax(0, 1fr); } }
+  .vs-col { border-top: 3px solid var(--a); padding-top: 8px; display: grid; gap: 6px; }
+  .vs-col.b { border-top-color: var(--b); }
+  .vs-col .name { font: 600 14px var(--cond); }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px 12px; }
+  .metric .v { font: 500 18px var(--mono); font-variant-numeric: tabular-nums; }
+  .metric .k { font-size: 11px; color: var(--ink-3); }
+
+  details.board { border-top: 1px solid var(--line-2); padding-top: 10px; }
+  details.board summary { cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ink-2); }
+  .board-table { overflow-x: auto; margin-top: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+  th { font-weight: 500; color: var(--ink-3); font-size: 11.5px; }
+  td.num { font-family: var(--mono); text-align: right; }
+  th.num { text-align: right; }
+  .barcell { width: 34%; min-width: 120px; }
+  .hbar { height: 8px; background: var(--line-2); border-radius: 4px; overflow: hidden; }
+  .hbar span { display: block; height: 100%; background: var(--ink-3); }
+  tr.is-a .hbar span { background: var(--a); } tr.is-b .hbar span { background: var(--b); }
+  tr.is-a td:first-child { color: var(--a); font-weight: 600; } tr.is-b td:first-child { color: var(--b); font-weight: 600; }
+  .pick { font: 500 11px var(--sans); border: 1px solid var(--line); background: none; color: var(--ink-2); border-radius: 4px; padding: 1px 6px; cursor: pointer; margin-left: 4px; }
+  .pick:hover { border-color: var(--ink-3); color: var(--ink); }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; font-size: 13px; color: var(--ink-2); }
+  .cards { display: grid; gap: 10px; }
+  article.seg { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 9px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-3); }
+  .meta code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); background: var(--ground); white-space: nowrap; }
+  .chip.pii { color: var(--gold); border-color: var(--gold); background: var(--gold-tint); }
+  .chip.why { font-family: var(--mono); font-size: 10.5px; }
+  .line { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 10px; align-items: start; }
+  @media (max-width: 560px) { .line { grid-template-columns: minmax(0, 1fr); gap: 3px; } }
+  .line .who { font-size: 12px; color: var(--ink-3); padding-top: 2px; display: grid; gap: 4px; justify-items: start; }
+  .line .who .nm { font-weight: 600; }
+  .line.a .who .nm { color: var(--a); } .line.b .who .nm { color: var(--b); }
+  .txt { font: 13.5px/1.75 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+  .g { background: var(--gold-tint); border-bottom: 2px solid var(--gold); }
+  .mask { background: var(--bar); color: var(--bar-ink); border-radius: 2px; padding: 1px 3px; font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .mask.over { background: repeating-linear-gradient(135deg, var(--over) 0 3px, var(--over-tint) 3px 6px); color: var(--ink); border: 1px solid var(--over); }
+  .leak { text-decoration: underline wavy var(--miss); text-decoration-thickness: 1.5px; text-underline-offset: 3px; background: var(--miss-tint); }
+  .out { font-size: 11px; font-weight: 600; padding: 0 7px; border-radius: 999px; }
+  .out.tp { color: var(--ok); background: var(--ok-tint); }
+  .out.tn { color: var(--ink-3); background: var(--line-2); }
+  .out.fn { color: var(--miss); background: var(--miss-tint); }
+  .out.fp { color: var(--over); background: var(--over-tint); }
+  .score { font: 11px var(--mono); color: var(--ink-3); }
+  details.ctx summary { cursor: pointer; font-size: 12px; color: var(--ink-3); }
+  details.ctx .txt { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; border-left: 2px solid var(--line); padding-left: 10px; }
+  .more { justify-self: center; font: 500 13px var(--sans); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px 18px; cursor: pointer; }
+  .empty { padding: 28px; text-align: center; color: var(--ink-3); background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; }
+  .note { font-size: 12px; color: var(--ink-3); max-width: 90ch; }
+  @media (prefers-reduced-motion: no-preference) { article.seg { transition: border-color .15s; } article.seg:hover { border-color: var(--ink-3); } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Redaction Bench</h1>
+      <p>Every segment as two PII detectors would censor it. Gold PII is underlined; a censor bar over gold is caught, a striped bar is clean text masked, a red wavy underline is PII left showing.</p>
+    </div>
+    <div class="legend" aria-label="Legend">
+      <span><i class="sw-gold"></i>gold PII</span>
+      <span><i class="sw-bar"></i>censored PII</span>
+      <span><i class="sw-over"></i>over-masked</span>
+      <span><i class="sw-leak"></i>PII left visible</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Filters">
+      <div class="field">
+        <label for="f-dataset">Dataset</label>
+        <select id="f-dataset"></select>
+      </div>
+      <div class="field">
+        <label for="f-a"><span class="ab-tag a">A</span>Model A</label>
+        <select id="f-a"></select>
+      </div>
+      <div class="field">
+        <label for="f-b"><span class="ab-tag b">B</span>Model B</label>
+        <select id="f-b"></select>
+      </div>
+      <button class="swap" id="swap" type="button">Swap A and B</button>
+      <div class="field">
+        <label for="f-view">Show</label>
+        <select id="f-view">
+          <option value="all">All sampled segments</option>
+          <option value="disagree">A and B disagree</option>
+          <option value="a-fn">PII missed by A</option>
+          <option value="b-fn">PII missed by B</option>
+          <option value="a-fp">Clean text masked by A</option>
+          <option value="b-fp">Clean text masked by B</option>
+          <option value="both-fn">PII missed by both</option>
+          <option value="leak-a">PII characters left visible by A</option>
+          <option value="leak-b">PII characters left visible by B</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-type">Gold PII type</label>
+        <select id="f-type"></select>
+      </div>
+      <div class="field">
+        <label for="f-lang">Language</label>
+        <select id="f-lang"></select>
+      </div>
+      <div class="field">
+        <label for="f-sort">Order</label>
+        <select id="f-sort">
+          <option value="sample">Sample order</option>
+          <option value="a-desc">A score, high to low</option>
+          <option value="a-asc">A score, low to high</option>
+          <option value="b-desc">B score, high to low</option>
+          <option value="gap">Largest A − B score gap</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-q">Search text</label>
+        <input id="f-q" type="search" placeholder="name, number, word…" autocomplete="off">
+      </div>
+      <p class="tiny" id="sample-note"></p>
+    </aside>
+
+    <main>
+      <section class="summary" id="summary" aria-live="polite"></section>
+      <div class="toolbar"><span id="count"></span><span class="tiny">Scores: the model's segment score; the bar for "recall at 5% mask" is set so 5% of clean segments are censored.</span></div>
+      <div class="cards" id="cards"></div>
+      <button class="more" id="more" type="button" hidden>Show 40 more</button>
+      <p class="note" id="foot"></p>
+    </main>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem("rb:" + k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem("rb:" + k, v); } catch {} },
+  };
+  const PREFERRED_A = ["openai-privacy-filter-owner-context-2", "openai-privacy-filter"];
+  const PREFERRED_B = ["pii-tracer-owner-context-2", "pii-tracer", "gliner-pii-knowledgator-edge"];
+  const PAGE = 40;
+  let summary = null, data = null, shown = PAGE;
+  const cache = {};
+
+  function nice(p) {
+    const base = {
+      "openai-privacy-filter": "Privacy Filter",
+      "openmed-privacy-filter-multilingual-v2": "OpenMed PF multilingual",
+      "pii-tracer": "PII-Tracer",
+      "gliner2-pii-fastino": "GLiNER2-PII",
+      "gliner-pii-knowledgator-edge": "knowledgator edge",
+      "gliner-pii-knowledgator-small": "knowledgator small",
+      "gliner-pii-knowledgator-base": "knowledgator base",
+      "gliner-pii-knowledgator-large": "knowledgator large",
+      "gliner-pii-urchade-multi": "urchade multi",
+      "gliner-pii-nvidia": "NVIDIA GLiNER-PII",
+      "gliner-guard-omni": "GLiNER Guard omni",
+      "gliner-guard-uni": "GLiNER Guard uni",
+      "regex-pii": "Regex floor",
+      "constant-pii": "Mask everything",
+    };
+    const ctx = p.endsWith("-owner-context-2") ? " · own last 2 turns" : p.endsWith("-owner-context") ? " · own turns" : p.endsWith("-context") ? " · all turns" : "";
+    const key = p.replace(/-owner-context-2$|-owner-context$|-context$/, "");
+    return (base[key] || key) + ctx;
+  }
+  const pct = (v) => v == null ? "–" : (100 * v).toFixed(1) + "%";
+  const num = (v, d = 2) => v == null ? "–" : v.toFixed(d);
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  function fillSelect(el, items, value, label = (x) => x) {
+    el.innerHTML = items.map((x) => `<option value="${esc(x)}"${x === value ? " selected" : ""}>${esc(label(x))}</option>`).join("");
+  }
+
+  async function getJSON(path) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error(`${path}: ${r.status}`);
+    return r.json();
+  }
+
+  // Character runs of the segment with gold, censored and over-masked flags, for one model (or none)
+  function runs(text, gold, spans) {
+    const cuts = new Set([0, text.length]);
+    for (const [s, e] of gold) { cuts.add(Math.max(0, s)); cuts.add(Math.min(text.length, e)); }
+    for (const [s, e] of spans || []) { cuts.add(Math.max(0, s)); cuts.add(Math.min(text.length, e)); }
+    const points = [...cuts].sort((x, y) => x - y);
+    const out = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i], b = points[i + 1];
+      if (b <= a) continue;
+      const g = gold.find(([s, e]) => s <= a && e >= b);
+      const m = (spans || []).find(([s, e]) => s <= a && e >= b);
+      out.push({ text: text.slice(a, b), gold: g ? g[2] : null, mask: m ? m[2] : null });
+    }
+    return out;
+  }
+
+  function goldLine(row) {
+    return runs(row.text, row.gold, null).map((r) => r.gold ? `<span class="g" title="${esc(r.gold)}">${esc(r.text)}</span>` : esc(r.text)).join("");
+  }
+
+  function censoredLine(row, pred) {
+    const spans = pred ? pred[2] : [];
+    const parts = runs(row.text, row.gold, spans);
+    let html = "", i = 0;
+    while (i < parts.length) {
+      const r = parts[i];
+      if (r.mask) {
+        // merge consecutive masked runs of the same span into one bar, striped when it covers no gold
+        let j = i, kind = r.mask, hasGold = false, clean = false;
+        while (j < parts.length && parts[j].mask === kind) { hasGold ||= !!parts[j].gold; clean ||= !parts[j].gold && parts[j].text.trim() !== ""; j++; }
+        html += `<span class="mask${hasGold ? "" : " over"}" title="${esc(kind)}${hasGold ? "" : " (no gold PII here)"}">${esc(kind.replace(/_/g, " "))}</span>`;
+        i = j;
+      } else if (r.gold) {
+        html += `<span class="leak" title="gold ${esc(r.gold)} left visible">${esc(r.text)}</span>`;
+        i++;
+      } else {
+        html += esc(r.text);
+        i++;
+      }
+    }
+    return html;
+  }
+
+  function outcome(row, pred) {
+    if (!pred) return "na";
+    return row.pii ? (pred[0] ? "tp" : "fn") : (pred[0] ? "fp" : "tn");
+  }
+  const OUT_LABEL = { tp: "caught", fn: "missed", fp: "over-masked", tn: "left clean", na: "no run" };
+  function leaks(row, pred) {
+    if (!pred) return false;
+    return runs(row.text, row.gold, pred[2]).some((r) => r.gold && !r.mask && r.text.trim());
+  }
+
+  function renderSummary() {
+    const ds = summary.datasets.find((d) => d.name === $("f-dataset").value);
+    const a = $("f-a").value, b = $("f-b").value;
+    if (!ds) { $("summary").innerHTML = ""; return; }
+    const col = (p, cls, tag) => {
+      const m = ds.models[p] || {};
+      return `<div class="vs-col ${cls}"><div class="name"><span class="ab-tag ${cls}">${tag}</span>${esc(nice(p))}</div>
+        <div class="metrics">
+          <div class="metric"><div class="v">${num(m.recall5)}</div><div class="k">recall at 5% mask</div></div>
+          <div class="metric"><div class="v">${num(m.recall)}</div><div class="k">recall at its own bar</div></div>
+          <div class="metric"><div class="v">${pct(m.false_mask)}</div><div class="k">clean segments masked</div></div>
+          <div class="metric"><div class="v">${pct(m.pii_chars)}</div><div class="k">PII characters censored</div></div>
+          <div class="metric"><div class="v">${pct(m.clean_chars)}</div><div class="k">clean characters censored</div></div>
+          <div class="metric"><div class="v">${m.ms == null ? "–" : m.ms.toFixed(1)}</div><div class="k">ms per segment (p50, A100)</div></div>
+        </div></div>`;
+    };
+    const ranked = Object.entries(ds.models).filter(([p]) => p !== "constant-pii").sort((x, y) => (y[1].recall5 ?? -1) - (x[1].recall5 ?? -1));
+    const rows = ranked.map(([p, m]) => `<tr class="${p === a ? "is-a" : p === b ? "is-b" : ""}">
+        <td>${esc(nice(p))}<button class="pick" type="button" data-pick="a" data-p="${esc(p)}" aria-label="Set ${esc(nice(p))} as model A">A</button><button class="pick" type="button" data-pick="b" data-p="${esc(p)}" aria-label="Set ${esc(nice(p))} as model B">B</button></td>
+        <td class="barcell"><div class="hbar"><span style="width:${Math.max(0, (m.recall5 || 0) * 100)}%"></span></div></td>
+        <td class="num">${num(m.recall5)}</td><td class="num">${pct(m.false_mask)}</td><td class="num">${pct(m.pii_chars)}</td><td class="num">${pct(m.clean_chars)}</td><td class="num">${num(m.auc, 3)}</td></tr>`).join("");
+    $("summary").innerHTML = `<div class="summary-head"><h2>${esc(ds.name)}</h2>
+        <div class="facts"><span>${ds.n.toLocaleString()} segments in the full set</span><span>${pct(ds.pii / ds.n)} with PII</span><span>${data ? data.rows.length.toLocaleString() : "…"} sampled here</span></div></div>
+      <div class="vs">${col(a, "a", "A")}${col(b, "b", "B")}</div>
+      <details class="board"${store.get("board") === "open" ? " open" : ""}><summary>Every model on this dataset, by recall at a 5% mask rate</summary>
+        <div class="board-table"><table><thead><tr><th>model</th><th></th><th class="num">recall @5%</th><th class="num">clean masked</th><th class="num">PII chars</th><th class="num">clean chars</th><th class="num">ROC AUC</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+    $("summary").querySelector("details.board").addEventListener("toggle", (e) => store.set("board", e.target.open ? "open" : "closed"));
+  }
+
+  function filtered() {
+    const a = $("f-a").value, b = $("f-b").value, view = $("f-view").value, type = $("f-type").value, lang = $("f-lang").value;
+    const q = $("f-q").value.trim().toLowerCase();
+    let rows = data.rows.filter((r) => {
+      if (type && !r.gold.some((g) => g[2] === type)) return false;
+      if (lang && r.lang !== lang) return false;
+      if (q && !r.text.toLowerCase().includes(q)) return false;
+      const oa = outcome(r, r.p[a]), ob = outcome(r, r.p[b]);
+      switch (view) {
+        case "disagree": return r.p[a] && r.p[b] && r.p[a][0] !== r.p[b][0];
+        case "a-fn": return oa === "fn";
+        case "b-fn": return ob === "fn";
+        case "a-fp": return oa === "fp";
+        case "b-fp": return ob === "fp";
+        case "both-fn": return oa === "fn" && ob === "fn";
+        case "leak-a": return leaks(r, r.p[a]);
+        case "leak-b": return leaks(r, r.p[b]);
+        default: return true;
+      }
+    });
+    const sa = (r) => r.p[a] ? r.p[a][1] : -1, sb = (r) => r.p[b] ? r.p[b][1] : -1;
+    const sort = $("f-sort").value;
+    if (sort === "a-desc") rows.sort((x, y) => sa(y) - sa(x));
+    if (sort === "a-asc") rows.sort((x, y) => sa(x) - sa(y));
+    if (sort === "b-desc") rows.sort((x, y) => sb(y) - sb(x));
+    if (sort === "gap") rows.sort((x, y) => Math.abs(sa(y) - sb(y)) - Math.abs(sa(x) - sb(x)));
+    return rows;
+  }
+
+  function card(r) {
+    const a = $("f-a").value, b = $("f-b").value;
+    const line = (p, cls, tag) => {
+      const pred = r.p[p], o = outcome(r, pred);
+      return `<div class="line ${cls}"><div class="who"><span><span class="ab-tag ${cls}">${tag}</span><span class="nm">${esc(nice(p).split(" · ")[0])}</span></span>
+        <span><span class="out ${o}">${OUT_LABEL[o]}</span> <span class="score">${pred ? pred[1].toFixed(3) : ""}</span></span></div>
+        <div class="txt">${pred ? censoredLine(r, pred) : '<span class="tiny">not run on this dataset</span>'}</div></div>`;
+    };
+    const types = [...new Set(r.gold.map((g) => g[2]))];
+    return `<article class="seg">
+      <div class="meta"><code>${esc(r.id)}</code>${r.lang ? `<span class="chip">${esc(r.lang)}</span>` : ""}${r.cat ? `<span class="chip">${esc(r.cat)}</span>` : ""}
+        <span class="chip${r.pii ? " pii" : ""}">${r.pii ? "PII: " + esc(types.join(", ") || "yes") : "no PII"}</span>
+        ${r.why.map((w) => `<span class="chip why" title="why this segment is in the sample">${esc(w)}</span>`).join("")}</div>
+      <div class="line"><div class="who"><span class="nm">Segment</span><span class="tiny">gold underlined</span></div><div class="txt">${goldLine(r)}</div></div>
+      ${line(a, "a", "A")}${line(b, "b", "B")}
+      ${r.ctx ? `<details class="ctx"><summary>Earlier turns in the conversation</summary><div class="txt">${esc(r.ctx)}</div></details>` : ""}
+    </article>`;
+  }
+
+  function renderCards() {
+    const rows = filtered();
+    $("count").textContent = `${rows.length.toLocaleString()} of ${data.rows.length.toLocaleString()} sampled segments`;
+    $("cards").innerHTML = rows.length ? rows.slice(0, shown).map(card).join("") : '<div class="empty">No sampled segment matches these filters. Widen the type, language or search.</div>';
+    $("more").hidden = rows.length <= shown;
+  }
+
+  function persist() {
+    for (const k of ["dataset", "a", "b", "view", "sort"]) store.set(k, $("f-" + k).value);
+  }
+
+  async function loadDataset(name) {
+    $("cards").innerHTML = '<div class="empty">Loading segments…</div>';
+    data = cache[name] || (cache[name] = await getJSON(`data/${encodeURIComponent(name)}.json`));
+    const models = data.pipelines;
+    const pick = (pref, saved, avoid) => (saved && models.includes(saved) && saved !== avoid) ? saved : (pref.find((p) => models.includes(p) && p !== avoid) || models.find((p) => p !== avoid && p !== "constant-pii") || models[0]);
+    const a = pick(PREFERRED_A, $("f-a").value || store.get("a"), null);
+    const b = pick(PREFERRED_B, $("f-b").value || store.get("b"), a);
+    fillSelect($("f-a"), models, a, nice);
+    fillSelect($("f-b"), models, b, nice);
+    const types = [...new Set(data.rows.flatMap((r) => r.gold.map((g) => g[2])))].sort();
+    fillSelect($("f-type"), ["", ...types], "", (t) => t || "Any type");
+    const langs = [...new Set(data.rows.map((r) => r.lang).filter(Boolean))].sort();
+    fillSelect($("f-lang"), ["", ...langs], "", (l) => l || "Any language");
+    $("f-lang").disabled = langs.length < 2;
+    $("sample-note").textContent = "This page holds an error-weighted sample: every disagreement, each model's misses and false masks, and a random draw. Full predictions are in the run's parquet files.";
+    shown = PAGE;
+    renderSummary();
+    renderCards();
+    persist();
+  }
+
+  async function start() {
+    try {
+      summary = await getJSON("data/summary.json");
+    } catch (error) {
+      $("cards").innerHTML = `<div class="empty">The benchmark data did not load (${esc(String(error.message || error))}). Publish the page with its data/ folder.</div>`;
+      return;
+    }
+    const names = summary.datasets.map((d) => d.name);
+    const saved = store.get("dataset");
+    fillSelect($("f-dataset"), names, names.includes(saved) ? saved : names[0]);
+    for (const k of ["view", "sort"]) { const v = store.get(k); if (v) $("f-" + k).value = v; }
+    $("foot").textContent = `${names.length} datasets. Censoring is drawn from each model's own spans; a segment-level model censors the whole segment.`;
+    await loadDataset($("f-dataset").value);
+  }
+
+  $("f-dataset").addEventListener("change", (e) => loadDataset(e.target.value));
+  for (const id of ["f-a", "f-b"]) $(id).addEventListener("change", () => { shown = PAGE; renderSummary(); renderCards(); persist(); });
+  for (const id of ["f-view", "f-type", "f-lang", "f-sort"]) $(id).addEventListener("change", () => { shown = PAGE; renderCards(); persist(); });
+  $("f-q").addEventListener("input", () => { shown = PAGE; renderCards(); });
+  $("more").addEventListener("click", () => { shown += PAGE; renderCards(); });
+  $("swap").addEventListener("click", () => { const a = $("f-a").value; $("f-a").value = $("f-b").value; $("f-b").value = a; renderSummary(); renderCards(); persist(); });
+  $("summary").addEventListener("click", (e) => {
+    const btn = e.target.closest("button.pick");
+    if (!btn) return;
+    $(btn.dataset.pick === "a" ? "f-a" : "f-b").value = btn.dataset.p;
+    shown = PAGE; renderSummary(); renderCards(); persist();
+  });
+  start();
+})();
+</script>
