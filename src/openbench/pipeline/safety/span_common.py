@@ -1,0 +1,102 @@
+# For licensing see accompanying LICENSE.md file.
+# Copyright (C) 2026 Argmax, Inc. All Rights Reserved.
+
+"""What the span-level PII pipelines share: the window they read, the target ranges inside it, and the verdict.
+
+A span model reads the target turns, optionally after the speaker's earlier
+turns, and only spans inside the target turns count. The verdict is PII when
+any span reaches the pipeline's bar; the score is the model's highest
+confidence inside the target turns, so the ROC curve sweeps that bar.
+`raw_output` is JSON with the spans as [start, end, type] in the sample's text
+(its target turns joined by newlines), for character-level scoring.
+"""
+
+import json
+
+from pydantic import Field
+
+from ...pipeline_prediction import SafetyLabel, SafetyPrediction
+from .common import ContextSpeakers, SafetyConfig
+
+
+class SpanPipelineConfig(SafetyConfig):
+    context_turns: int = Field(
+        0,
+        ge=0,
+        description="Turns kept before the first target turn; only spans inside the target turns count.",
+    )
+    context_speakers: ContextSpeakers = Field(
+        "all", description="`target` keeps only the speaker under test in the context (an owner-only transcript)."
+    )
+
+
+def render_window(window: list[tuple[str, str, bool]]) -> tuple[str, list[tuple[int, int]]]:
+    """One text for the window and the character ranges of its target turns.
+
+    A window of target turns only is their texts joined by newlines; with
+    context, every turn is a `speaker: text` line.
+    """
+    with_speakers = not all(target for _, _, target in window)
+    pieces, ranges, position = [], [], 0
+    for speaker, text, target in window:
+        prefix = f"{speaker}: " if with_speakers else ""
+        start = position + len(prefix)
+        if target:
+            ranges.append((start, start + len(text)))
+        pieces.append(prefix + text)
+        position = start + len(text) + 1
+    return "\n".join(pieces), ranges
+
+
+def overlaps(span: tuple[int, int], ranges: list[tuple[int, int]]) -> bool:
+    start, end = span
+    return end > start and any(end > a and start < b for a, b in ranges)
+
+
+def entity_type(label: str) -> str:
+    """`B-private_phone` -> `private_phone`."""
+    return label.split("-", 1)[1] if "-" in label else label
+
+
+def to_target_offsets(span: tuple[int, int], ranges: list[tuple[int, int]]) -> tuple[int, int, int] | None:
+    """Map character offsets in the rendered window to the target text (the target turns joined by newlines).
+
+    Returns (range index, start, end) for the first target range the span overlaps, or None.
+    """
+    start, end = span
+    position = 0
+    for index, (a, b) in enumerate(ranges):
+        if end > start and end > a and start < b:
+            return index, position + max(start, a) - a, position + min(end, b) - a
+        position += b - a + 1
+    return None
+
+
+def target_spans(
+    spans: list[tuple[int, int, str, float]], ranges: list[tuple[int, int]]
+) -> list[tuple[int, int, str, float]]:
+    """Character spans (start, end, type, score) in the window, kept and mapped when they fall in a target turn."""
+    kept = []
+    for start, end, kind, score in spans:
+        mapped = to_target_offsets((start, end), ranges)
+        if mapped is not None:
+            kept.append((mapped[1], mapped[2], kind, score))
+    return kept
+
+
+def span_prediction(
+    spans: list[tuple[int, int, str, float]], score: float, threshold: float, *, flag_on_spans: bool = False
+) -> SafetyPrediction:
+    """The verdict from target spans and the target's best score.
+
+    PII when the score reaches `threshold`, or, with `flag_on_spans`, whenever
+    the model's own decoder kept a span (models whose decoder is the verdict).
+    """
+    is_unsafe = bool(spans) if flag_on_spans else score >= threshold
+    top = max(spans, key=lambda span: span[3]) if spans else None
+    return SafetyPrediction(
+        label=SafetyLabel.UNSAFE if is_unsafe else SafetyLabel.SAFE,
+        unsafe_score=float(score),
+        category=top[2] if is_unsafe and top else None,
+        raw_output=json.dumps({"spans": [[start, end, kind] for start, end, kind, _ in spans]}),
+    )

@@ -14,6 +14,8 @@ from .pipeline_registry import PipelineRegistry
 from .safety import (
     ConstantSafetyPipeline,
     CoreMLRobloxPIIPipeline,
+    GLiNERPIIPipeline,
+    HuggingFacePIITracerPipeline,
     HuggingFacePrivacyFilterPipeline,
     HuggingFaceRobloxPIIPipeline,
 )
@@ -915,6 +917,199 @@ def register_pipeline_aliases() -> None:
         default_config={"out_dir": "./pii_results", "context_turns": 2, "context_speakers": "target"},
         description="OpenAI Privacy Filter with the speaker's own last 2 turns before the turn.",
     )
+
+    _register_alias(
+        "pii-tracer",
+        HuggingFacePIITracerPipeline,
+        default_config={"out_dir": "./pii_results"},
+        description=(
+            "Perplexity PII-Tracer (0.6B bidirectional Qwen3 encoder, MIT) on the turn alone; PII when its own "
+            "constrained Viterbi keeps a span in the turn. Needs transformers >= 5.2."
+        ),
+    )
+
+    _register_alias(
+        "pii-tracer-owner-context-2",
+        HuggingFacePIITracerPipeline,
+        default_config={"out_dir": "./pii_results", "context_turns": 2, "context_speakers": "target"},
+        description="PII-Tracer with the speaker's own last 2 turns before the turn.",
+    )
+
+    # GLiNER family: zero-shot span extractors, each given the PII labels of its own taxonomy (broad types such as
+    # city, country or company are left out: the gold labels do not count them).
+    gliner_v1_labels = [
+        "person",
+        "name",
+        "email address",
+        "phone number",
+        "street address",
+        "postal code",
+        "social security number",
+        "credit card number",
+        "bank account number",
+        "account number",
+        "identity document number",
+        "passport number",
+        "driver's license number",
+        "username",
+        "password",
+        "url",
+        "date of birth",
+        "license plate number",
+    ]
+    nvidia_labels = [
+        "first_name",
+        "last_name",
+        "email",
+        "phone_number",
+        "street_address",
+        "postcode",
+        "ssn",
+        "credit_debit_card",
+        "account_number",
+        "customer_id",
+        "user_name",
+        "password",
+        "url",
+        "date_of_birth",
+        "license_plate",
+        "national_id",
+    ]
+    gliner2_pii_labels = [
+        "person",
+        "full_name",
+        "first_name",
+        "last_name",
+        "email",
+        "phone_number",
+        "address",
+        "street_address",
+        "postal_code",
+        "government_id",
+        "national_id_number",
+        "passport_number",
+        "drivers_license_number",
+        "account_number",
+        "card_number",
+        "username",
+        "account_id",
+        "password",
+        "secret",
+        "date_of_birth",
+    ]
+    guard_labels = [
+        "person",
+        "first_name",
+        "last_name",
+        "address",
+        "street",
+        "postal_code",
+        "email",
+        "phone",
+        "social_account",
+        "messenger",
+        "passport",
+        "national_id",
+        "document_id",
+        "date_of_birth",
+        "card_number",
+    ]
+    gliner_models = [
+        (
+            "gliner-pii-urchade-multi",
+            "urchade/gliner_multi_pii-v1",
+            "gliner",
+            gliner_v1_labels,
+            0.5,
+            "GLiNER v1 multilingual PII fine-tune by GLiNER's author (Apache-2.0)",
+        ),
+        (
+            "gliner-pii-nvidia",
+            "nvidia/gliner-PII",
+            "gliner",
+            nvidia_labels,
+            0.5,
+            "NVIDIA GLiNER-PII on GLiNER large-v2.1, trained on Nemotron-PII (NVIDIA Open Model License)",
+        ),
+        (
+            "gliner-pii-knowledgator-edge",
+            "knowledgator/gliner-pii-edge-v1.0",
+            "gliner",
+            gliner_v1_labels,
+            0.3,
+            "Knowledgator GLiNER-PII edge (Apache-2.0)",
+        ),
+        (
+            "gliner-pii-knowledgator-small",
+            "knowledgator/gliner-pii-small-v1.0",
+            "gliner",
+            gliner_v1_labels,
+            0.3,
+            "Knowledgator GLiNER-PII small (Apache-2.0)",
+        ),
+        (
+            "gliner-pii-knowledgator-base",
+            "knowledgator/gliner-pii-base-v1.0",
+            "gliner",
+            gliner_v1_labels,
+            0.3,
+            "Knowledgator GLiNER-PII base (Apache-2.0)",
+        ),
+        (
+            "gliner-pii-knowledgator-large",
+            "knowledgator/gliner-pii-large-v1.0",
+            "gliner",
+            gliner_v1_labels,
+            0.3,
+            "Knowledgator GLiNER-PII large (Apache-2.0)",
+        ),
+        (
+            "gliner2-pii-fastino",
+            "fastino/gliner2-privacy-filter-PII-multi",
+            "gliner2",
+            gliner2_pii_labels,
+            0.5,
+            "Fastino GLiNER2-PII, 0.3B, 7 languages (Apache-2.0)",
+        ),
+        (
+            "gliner-guard-omni",
+            "hivetrace/gliner-guard-omni",
+            "gliner2",
+            guard_labels,
+            0.4,
+            "hivetrace GLiNER Guard omni, 0.3B, safety + PII (Apache-2.0)",
+        ),
+        (
+            "gliner-guard-uni",
+            "hivetrace/gliner-guard-uniencoder",
+            "gliner2",
+            guard_labels,
+            0.4,
+            "hivetrace GLiNER Guard uni-encoder, 0.15B (Apache-2.0)",
+        ),
+        (
+            "gliner-guard-bi",
+            "hivetrace/gliner-guard-biencoder",
+            "gliner2",
+            guard_labels,
+            0.4,
+            "hivetrace GLiNER Guard bi-encoder, 0.15B (Apache-2.0)",
+        ),
+    ]
+    for alias, model_id, library, labels, threshold, description in gliner_models:
+        base = {"out_dir": "./pii_results", "model_id": model_id, "library": library, "labels": labels}
+        _register_alias(
+            alias,
+            GLiNERPIIPipeline,
+            default_config={**base, "threshold": threshold},
+            description=f"{description}; the turn alone, a span at or above {threshold} flags it.",
+        )
+        _register_alias(
+            f"{alias}-owner-context-2",
+            GLiNERPIIPipeline,
+            default_config={**base, "threshold": threshold, "context_turns": 2, "context_speakers": "target"},
+            description=f"{description}; the speaker's own last 2 turns before the turn.",
+        )
 
     _register_alias(
         "constant-pii",

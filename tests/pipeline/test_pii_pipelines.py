@@ -17,7 +17,8 @@ from openbench.pipeline.safety.roblox_pii_common import (
     validate_heads,
     verdict,
 )
-from openbench.pipeline.safety.safety_hf_privacy_filter import entity_type, render_window, spans_from_tokens
+from openbench.pipeline.safety.safety_hf_privacy_filter import spans_from_tokens
+from openbench.pipeline.safety.span_common import entity_type, render_window, span_prediction, target_spans
 from openbench.pipeline_prediction import SafetyLabel
 
 
@@ -99,3 +100,18 @@ def test_spans_from_tokens_maps_target_tokens_to_the_sample_text():
     target_text = "it's 555\n0101"
     assert [target_text[a:b] for a, b, _ in spans] == ["555", "0101"]
     assert entity_type("I-account_number") == "account_number" and entity_type("O") == "O"
+
+
+def test_target_spans_keep_and_map_spans_inside_the_target_turns():
+    text, ranges = render_window(sample().window(16))
+    spans = [
+        (text.index("number"), text.index("number") + 6, "x", 0.9),  # in the other speaker's turn
+        (text.index("555"), text.index("555") + 3, "phone", 0.8),
+        (text.index("0101"), text.index("0101") + 4, "phone", 0.7),
+    ]
+    kept = target_spans(spans, ranges)
+    assert [("it's 555\n0101"[a:b], kind) for a, b, kind, _ in kept] == [("555", "phone"), ("0101", "phone")]
+    verdict = span_prediction(kept, 0.8, 0.5)
+    assert verdict.label == SafetyLabel.UNSAFE and verdict.category == "phone"
+    assert span_prediction([], 0.2, 0.5).label == SafetyLabel.SAFE
+    assert span_prediction(kept, 0.2, 0.5, flag_on_spans=True).label == SafetyLabel.UNSAFE

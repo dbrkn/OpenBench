@@ -21,62 +21,17 @@ from pydantic import Field
 from ...dataset.dataset_safety import SafetySample
 from ...pipeline_prediction import SafetyLabel, SafetyPrediction
 from ..base import Pipeline, PipelineType, register_pipeline
-from .common import (
-    ContextSpeakers,
-    SafetyConfig,
-    SafetyInput,
-    SafetyOutput,
-    dtype_kwargs,
-    empty_text_prediction,
-)
+from .common import SafetyInput, SafetyOutput, dtype_kwargs, empty_text_prediction
+from .span_common import SpanPipelineConfig, entity_type, overlaps, render_window, to_target_offsets
+
+
+__all__ = ["HuggingFacePrivacyFilterConfig", "HuggingFacePrivacyFilterPipeline", "render_window", "spans_from_tokens"]
 
 
 logger = get_logger(__name__)
 
 HUB_MODEL_ID = "openai/privacy-filter"
 MIN_TRANSFORMERS = (5, 6)
-
-
-def render_window(window: list[tuple[str, str, bool]]) -> tuple[str, list[tuple[int, int]]]:
-    """One text for the window and the character ranges of its target turns.
-
-    A window of target turns only is their texts joined by newlines; with
-    context, every turn is a `speaker: text` line.
-    """
-    with_speakers = not all(target for _, _, target in window)
-    pieces, ranges, position = [], [], 0
-    for speaker, text, target in window:
-        prefix = f"{speaker}: " if with_speakers else ""
-        start = position + len(prefix)
-        if target:
-            ranges.append((start, start + len(text)))
-        pieces.append(prefix + text)
-        position = start + len(text) + 1
-    return "\n".join(pieces), ranges
-
-
-def overlaps(token: tuple[int, int], ranges: list[tuple[int, int]]) -> bool:
-    start, end = token
-    return end > start and any(end > a and start < b for a, b in ranges)
-
-
-def entity_type(label: str) -> str:
-    """`B-private_phone` -> `private_phone`."""
-    return label.split("-", 1)[1] if "-" in label else label
-
-
-def to_target_offsets(token: tuple[int, int], ranges: list[tuple[int, int]]) -> tuple[int, int, int] | None:
-    """Map a token's offsets in the rendered window to the target text (the target turns joined by newlines).
-
-    Returns (range index, start, end) for the first target range the token overlaps, or None.
-    """
-    start, end = token
-    position = 0
-    for index, (a, b) in enumerate(ranges):
-        if end > start and end > a and start < b:
-            return index, position + max(start, a) - a, position + min(end, b) - a
-        position += b - a + 1
-    return None
 
 
 def spans_from_tokens(
@@ -104,16 +59,8 @@ def spans_from_tokens(
     return spans
 
 
-class HuggingFacePrivacyFilterConfig(SafetyConfig):
+class HuggingFacePrivacyFilterConfig(SpanPipelineConfig):
     model_id: str = Field(HUB_MODEL_ID, description="Hub id or local directory of the checkpoint.")
-    context_turns: int = Field(
-        0,
-        ge=0,
-        description="Turns kept before the first target turn; only tokens inside the target turns count.",
-    )
-    context_speakers: ContextSpeakers = Field(
-        "all", description="`target` keeps only the speaker under test in the context (an owner-only transcript)."
-    )
     device: str | None = Field(
         None,
         description=(

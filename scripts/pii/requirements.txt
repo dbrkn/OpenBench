@@ -1,7 +1,10 @@
-# Text-only environment for the PII benchmark (no audio stack). OpenAI Privacy Filter needs transformers >= 5.6,
+# Text-only environment for the PII benchmark (no audio stack). OpenAI Privacy Filter needs transformers >= 5.6
+# (gliner needs < 5.17),
 # which the main uv.lock (4.x) cannot hold, hence a separate environment. Install the package itself with --no-deps.
 torch==2.8.*
-transformers>=5.6
+transformers>=5.6,<5.17
+gliner>=0.2.29
+gliner2[local]>=2.1
 numpy<2
 pyarrow<20
 datasets>=3.1,<4
