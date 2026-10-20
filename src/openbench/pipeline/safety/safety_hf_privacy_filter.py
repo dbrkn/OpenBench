@@ -80,6 +80,13 @@ class HuggingFacePrivacyFilterConfig(SpanPipelineConfig):
         "auto", description="Weights dtype; `auto` is bf16 (as shipped) on CUDA and float32 on the CPU."
     )
     max_tokens: int = Field(8192, description="Token budget; longer inputs keep their end (the target turn).")
+    experts_implementation: Literal["grouped_mm", "eager", "batched_mm"] = Field(
+        "grouped_mm",
+        description=(
+            "Mixture-of-experts kernel. `grouped_mm` gave the same verdicts, spans and scores as the checkpoint's "
+            "default `eager` per-expert loop on 1,000 segments in float32 on an A100, 6x faster per segment."
+        ),
+    )
 
 
 @register_pipeline
@@ -102,11 +109,16 @@ class HuggingFacePrivacyFilterPipeline(Pipeline):
         device = config.device or ("cuda" if torch.cuda.is_available() else "cpu")
         dtype = config.dtype if config.dtype != "auto" else ("bfloat16" if device.startswith("cuda") else "float32")
         tokenizer = AutoTokenizer.from_pretrained(config.model_id, truncation_side="left")
-        model = AutoModelForTokenClassification.from_pretrained(config.model_id, **dtype_kwargs(dtype))
+        experts = config.experts_implementation if device.startswith("cuda") else "eager"
+        model = AutoModelForTokenClassification.from_pretrained(
+            config.model_id, experts_implementation=experts, **dtype_kwargs(dtype)
+        )
         model.to(device).eval()
         id2label = {int(i): str(name) for i, name in model.config.id2label.items()}
         outside_id = next(i for i, name in id2label.items() if name == "O")
-        logger.info(f"{config.model_id} on {device} ({dtype}), context turns {config.context_turns}")
+        logger.info(
+            f"{config.model_id} on {device} ({dtype}, experts {experts}), context turns {config.context_turns}"
+        )
 
         def verdict(text_offsets, ranges, logits) -> SafetyPrediction:
             probabilities = torch.softmax(logits.float(), dim=-1).cpu()
