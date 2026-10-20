@@ -11,7 +11,7 @@ cd "$(dirname "$0")/../.."
 PII_ENV="$(cd "${PII_ENV:-.venv-pii}" && pwd)"
 OUT="$(mkdir -p "${OUT:-pii_full}" && cd "${OUT:-pii_full}" && pwd)"
 JOBS_PER_GPU="${JOBS_PER_GPU:-2}"
-export TOKENIZERS_PARALLELISM=false PYTHONWARNINGS=ignore
+export TOKENIZERS_PARALLELISM=false PYTHONWARNINGS=ignore PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 GPUS="$("$PII_ENV/bin/python" -c 'import torch; print(max(1, torch.cuda.device_count()))')"
 WORKERS=$((GPUS * JOBS_PER_GPU))
 PIPELINE_ARGS=()

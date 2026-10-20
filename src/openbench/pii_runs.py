@@ -108,8 +108,27 @@ def to_inputs(rows) -> list:
     return [SafetyInput.from_sample(sample) for sample in SafetyDataset(rows)]
 
 
+def batches(order: list[int], lengths: list[int], batch_size: int, char_budget: int):
+    """Length-sorted batches of at most `batch_size` segments and `char_budget` characters (the longest times the
+    count), so the long tail of a dataset runs in smaller batches instead of running out of GPU memory."""
+    start = 0
+    while start < len(order):
+        end = start + 1
+        while end < len(order) and end - start < batch_size and lengths[order[end]] * (end - start + 1) <= char_budget:
+            end += 1
+        yield start, order[start:end]
+        start = end
+
+
 def run_job(
-    job: Job, out: Path, pipeline_obj: Any, pipeline_config: dict, *, batch_size: int, logger: logging.Logger
+    job: Job,
+    out: Path,
+    pipeline_obj: Any,
+    pipeline_config: dict,
+    *,
+    batch_size: int,
+    logger: logging.Logger,
+    char_budget: int = 24_000,
 ) -> dict:
     """Run one (pipeline, dataset) job and write its parquet, manifest and log; returns the manifest."""
     import pyarrow as pa
@@ -121,7 +140,8 @@ def run_job(
     rows, dataset_config = load_dataset_rows(job.dataset)
     inputs = to_inputs(rows)
     ids = [str(row["id"]) for row in rows]
-    order = sorted(range(len(inputs)), key=lambda i: sum(len(t) for _, t, _ in inputs[i].window(8)))
+    lengths = [sum(len(t) for _, t, _ in item.window(8)) for item in inputs]
+    order = sorted(range(len(inputs)), key=lambda i: lengths[i])
     logger.info(f"{job.pipeline} on {job.dataset}: {len(inputs)} segments, batch {batch_size}")
 
     predictions: dict[int, Any] = {}
@@ -130,8 +150,7 @@ def run_job(
     batch_fn = getattr(pipeline_obj, "classify_batch", None) or (
         lambda batch: [pipeline_obj.pipeline(s) for s in batch]
     )
-    for start in range(0, len(order), batch_size):
-        chunk = order[start : start + batch_size]
+    for start, chunk in batches(order, lengths, batch_size, char_budget):
         tick = time.perf_counter()
         try:
             outputs = batch_fn([inputs[i] for i in chunk])
@@ -148,8 +167,8 @@ def run_job(
         for i, output in zip(chunk, outputs):
             predictions[i] = output
             latency[i] = per_item
-        if (start // batch_size) % 50 == 0:
-            logger.info(f"  {min(start + batch_size, len(order))}/{len(order)} segments")
+        if len(predictions) // 2000 != (len(predictions) - len(chunk)) // 2000:
+            logger.info(f"  {len(predictions)}/{len(order)} segments")
 
     table = pa.table(
         {
@@ -179,6 +198,7 @@ def run_job(
         "pii_rows": sum(1 for row in rows if row["label"] == "unsafe"),
         "errors": len(errors),
         "batch_size": batch_size,
+        "char_budget": char_budget,
         "seconds": round(finished - started, 2),
         "ms_per_segment_mean": round(sum(latency.values()) / max(1, len(latency)), 3),
         "started": datetime.fromtimestamp(started, timezone.utc).isoformat(),
