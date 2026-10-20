@@ -9,7 +9,7 @@ fine-tunes (urchade, NVIDIA, Knowledgator) and `gliner2` for GLiNER2 and the
 models built on it (Fastino's GLiNER2-PII, hivetrace's GLiNER Guard). Spans are
 extracted down to `score_floor` so the ROC curve has scores to sweep; the
 segment is PII when a span inside it reaches `threshold`, and only those spans
-are censored.
+are censored; the candidates below it stay in `raw_output` with their scores.
 """
 
 from typing import Any, Callable, Literal
@@ -101,8 +101,7 @@ class GLiNERPIIPipeline(Pipeline):
                 for (index, _, ranges), spans in zip(work, found):
                     spans = target_spans(spans, ranges)
                     score = max((span[3] for span in spans), default=0.0)
-                    kept = [span for span in spans if span[3] >= config.threshold]
-                    results[index] = span_prediction(kept, score, config.threshold)
+                    results[index] = span_prediction(spans, score, config.threshold, bar=config.threshold)
             return results
 
         self.classify_batch = classify_batch

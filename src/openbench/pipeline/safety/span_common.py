@@ -109,18 +109,44 @@ def item_logits(logits, index: int, length: int, padding_side: str):
 
 
 def span_prediction(
-    spans: list[tuple[int, int, str, float]], score: float, threshold: float, *, flag_on_spans: bool = False
+    spans: list[tuple[int, int, str, float]],
+    score: float,
+    threshold: float,
+    *,
+    flag_on_spans: bool = False,
+    bar: float = 0.0,
 ) -> SafetyPrediction:
     """The verdict from target spans and the target's best score.
 
     PII when the score reaches `threshold`, or, with `flag_on_spans`, whenever
     the model's own decoder kept a span (models whose decoder is the verdict).
+    `raw_output` lists every span as [start, end, type, score] with `bar`, the
+    span score at or above which a span is censored; spans below it are kept
+    as candidates, so a reader can re-score the segment under a different
+    choice of PII types or a different bar.
     """
-    is_unsafe = bool(spans) if flag_on_spans else score >= threshold
-    top = max(spans, key=lambda span: span[3]) if spans else None
+    censored = [span for span in spans if span[3] >= bar]
+    is_unsafe = bool(censored) if flag_on_spans else score >= threshold
+    top = max(censored, key=lambda span: span[3]) if censored else None
     return SafetyPrediction(
         label=SafetyLabel.UNSAFE if is_unsafe else SafetyLabel.SAFE,
         unsafe_score=float(score),
         category=top[2] if is_unsafe and top else None,
-        raw_output=json.dumps({"spans": [[start, end, kind] for start, end, kind, _ in spans]}),
+        raw_output=json.dumps(
+            {"bar": bar, "spans": [[start, end, kind, round(float(sc), 4)] for start, end, kind, sc in spans]}
+        ),
     )
+
+
+def parse_spans(raw_output: str | None) -> tuple[list[tuple[int, int, str, float]], float] | None:
+    """(spans with scores, bar) from a span pipeline's `raw_output`, or None for other outputs.
+
+    Spans written before scores were kept ([start, end, type]) read as score 1.
+    """
+    try:
+        payload = json.loads(raw_output or "")
+        spans = payload["spans"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    parsed = [(int(s[0]), int(s[1]), str(s[2]), float(s[3]) if len(s) > 3 else 1.0) for s in spans]
+    return parsed, float(payload.get("bar", 0.0))

@@ -43,27 +43,33 @@ MIN_TRANSFORMERS = (5, 6)
 
 
 def spans_from_tokens(
-    offsets: list[tuple[int, int]], labels: list[str], ranges: list[tuple[int, int]]
-) -> list[tuple[int, int, str]]:
-    """Contiguous runs of same-type PII tokens inside the target turns, as (start, end, type) in the target text."""
-    spans: list[tuple[int, int, str]] = []
-    current: tuple[int, int, int, str] | None = None  # range index, start, end, type
-    for offset, label in zip(offsets, labels):
+    offsets: list[tuple[int, int]],
+    labels: list[str],
+    ranges: list[tuple[int, int]],
+    scores: list[float] | None = None,
+) -> list[tuple[int, int, str, float]]:
+    """Contiguous runs of same-type PII tokens inside the target turns, as (start, end, type, score) in the target
+    text; a span's score is its most confident token's probability of not being `O` (1 without scores)."""
+    spans: list[tuple[int, int, str, float]] = []
+    current: list | None = None  # range index, start, end, type, score
+    for index, (offset, label) in enumerate(zip(offsets, labels)):
         mapped = to_target_offsets(offset, ranges) if label != "O" else None
         kind = entity_type(label) if mapped else None
+        token_score = scores[index] if scores is not None else 1.0
         if (
             current is not None
             and kind == current[3]
             and mapped[0] == current[0]
             and not label.startswith(("B-", "S-"))
         ):
-            current = (current[0], current[1], mapped[2], kind)
+            current[2] = mapped[2]
+            current[4] = max(current[4], token_score)
             continue
         if current is not None:
-            spans.append((current[1], current[2], current[3]))
-        current = (mapped[0], mapped[1], mapped[2], kind) if kind else None
+            spans.append((current[1], current[2], current[3], current[4]))
+        current = [mapped[0], mapped[1], mapped[2], kind, token_score] if kind else None
     if current is not None:
-        spans.append((current[1], current[2], current[3]))
+        spans.append((current[1], current[2], current[3], current[4]))
     return spans
 
 
@@ -126,18 +132,20 @@ class HuggingFacePrivacyFilterPipeline(Pipeline):
             not_outside = (1.0 - probabilities[:, outside_id]).tolist()
             in_target = [i for i, offset in enumerate(text_offsets) if overlaps(offset, ranges)]
             if not in_target:
-                return SafetyPrediction(label=SafetyLabel.SAFE, unsafe_score=0.0, raw_output=json.dumps({"spans": []}))
+                return SafetyPrediction(
+                    label=SafetyLabel.SAFE, unsafe_score=0.0, raw_output=json.dumps({"bar": 0.0, "spans": []})
+                )
             top = max(in_target, key=lambda i: not_outside[i])
             unsafe_score = float(not_outside[top])
             is_unsafe = unsafe_score >= config.threshold
             top_type = probabilities[top].clone()
             top_type[outside_id] = -1.0
-            spans = spans_from_tokens(text_offsets, [id2label[i] for i in predicted], ranges)
+            spans = spans_from_tokens(text_offsets, [id2label[i] for i in predicted], ranges, not_outside)
             return SafetyPrediction(
                 label=SafetyLabel.UNSAFE if is_unsafe else SafetyLabel.SAFE,
                 unsafe_score=unsafe_score,
                 category=entity_type(id2label[int(top_type.argmax())]) if is_unsafe else None,
-                raw_output=json.dumps({"spans": spans}),
+                raw_output=json.dumps({"bar": 0.0, "spans": [[a, b, k, round(sc, 4)] for a, b, k, sc in spans]}),
             )
 
         def classify_batch(samples: list[SafetyInput]) -> list[SafetyPrediction]:

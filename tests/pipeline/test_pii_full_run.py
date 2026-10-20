@@ -76,8 +76,12 @@ def test_full_run_report_and_viewer(tmp_path, tiny_dataset):
     email_row = next(r for r in wide if "jo@mail.com" in r["text"])
     assert email_row["gold_censored"] == "mail [EMAIL] please"
     assert email_row["regex-pii__censored"] == "mail [EMAIL] please"
-    assert email_row["regex-pii__outcome"] == "tp" and email_row["context"] == "agent: how can I reach you?"
-    assert subsets[tiny_dataset] and all("why" in r for r in subsets[tiny_dataset])
+    assert email_row["regex-pii__outcome"] == "tp"
+    assert json.loads(email_row["conversation"]) == [
+        ["agent", "how can I reach you?", False],
+        ["user", "mail jo@mail.com please", True],
+    ]
+    assert len(subsets[tiny_dataset]) == 3 and "regex-pii__raw" in subsets[tiny_dataset][0]
 
 
 def test_wilson_interval_and_censor():

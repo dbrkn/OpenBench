@@ -141,6 +141,27 @@
   .more { justify-self: center; font: 500 13px var(--sans); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px 18px; cursor: pointer; }
   .empty { padding: 28px; text-align: center; color: var(--ink-3); background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; }
   .note { font-size: 12px; color: var(--ink-3); max-width: 90ch; }
+  details.types { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  details.types summary { cursor: pointer; font-size: 12px; font-weight: 500; color: var(--ink-2); display: flex; justify-content: space-between; gap: 8px; }
+  details.types summary .tiny { font-weight: 400; }
+  .checks { display: grid; gap: 2px; max-height: 220px; overflow-y: auto; margin-top: 6px; padding-right: 2px; }
+  .checks label { display: flex; gap: 6px; align-items: center; font: 12px var(--mono); color: var(--ink-2); cursor: pointer; overflow-wrap: anywhere; }
+  .checks input { accent-color: var(--ink-2); flex: none; }
+  .check-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .check-actions button { font: 500 11px var(--sans); border: 1px solid var(--line); background: none; color: var(--ink-2); border-radius: 4px; padding: 1px 8px; cursor: pointer; }
+  .scope { font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--line-2); padding-top: 8px; }
+  .scope b { font-weight: 500; color: var(--ink-2); }
+  .turns { display: grid; gap: 4px; margin-top: 6px; }
+  .turn { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px; font-size: 12.5px; }
+  @media (max-width: 560px) { .turn { grid-template-columns: minmax(0, 1fr); gap: 1px; } }
+  .turn .spk { color: var(--ink-3); font-size: 11.5px; display: grid; gap: 2px; justify-items: start; }
+  .turn .t { font: 12.5px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+  .turn.other .t { color: var(--ink-3); opacity: 0.75; }
+  .turn.now .t { color: var(--ink); }
+  .tag { font-size: 10.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap; }
+  .tag.read { border-color: var(--ink-3); color: var(--ink-2); }
+  .tag.now { border-color: var(--gold); color: var(--gold); }
+  .counts { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
   @media (prefers-reduced-motion: no-preference) { article.seg { transition: border-color .15s; } article.seg:hover { border-color: var(--ink-3); } }
 </style>
 
@@ -188,7 +209,17 @@
         </select>
       </div>
       <div class="field">
-        <label for="f-type">Gold PII type</label>
+        <span class="label">What counts as PII</span>
+        <details class="types" id="t-gold"><summary>Gold types <span class="tiny" id="t-gold-n"></span></summary><div class="checks" id="c-gold"></div>
+          <div class="check-actions"><button type="button" data-all="gold">All</button><button type="button" data-none="gold">None</button></div></details>
+        <details class="types" id="t-a"><summary><span><span class="ab-tag a">A</span>A's types</span> <span class="tiny" id="t-a-n"></span></summary><div class="checks" id="c-a"></div>
+          <div class="check-actions"><button type="button" data-all="a">All</button><button type="button" data-none="a">None</button></div></details>
+        <details class="types" id="t-b"><summary><span><span class="ab-tag b">B</span>B's types</span> <span class="tiny" id="t-b-n"></span></summary><div class="checks" id="c-b"></div>
+          <div class="check-actions"><button type="button" data-all="b">All</button><button type="button" data-none="b">None</button></div></details>
+        <span class="tiny">Unticked gold types stop counting as PII; a model's unticked types are not censored. Every number recomputes.</span>
+      </div>
+      <div class="field">
+        <label for="f-type">Only segments with gold type</label>
         <select id="f-type"></select>
       </div>
       <div class="field">
@@ -214,7 +245,7 @@
 
     <main>
       <section class="summary" id="summary" aria-live="polite"></section>
-      <div class="toolbar"><span id="count"></span><span class="tiny">Scores: the model's segment score; the bar for "recall at 5% mask" is set so 5% of clean segments are censored.</span></div>
+      <div class="toolbar"><span id="count"></span><span class="tiny">Numbers above are computed on the segments shown; "recall at 5% mask" sets each model's bar so 5% of the shown clean segments are censored.</span></div>
       <div class="cards" id="cards"></div>
       <button class="more" id="more" type="button" hidden>Show 40 more</button>
       <p class="note" id="foot"></p>
@@ -232,8 +263,11 @@
   const PREFERRED_A = ["openai-privacy-filter-owner-context-2", "openai-privacy-filter"];
   const PREFERRED_B = ["pii-tracer-owner-context-2", "pii-tracer", "gliner-pii-knowledgator-edge"];
   const PAGE = 40;
-  let summary = null, data = null, shown = PAGE;
+  const MIN_CLEAN_FOR_RATE = 20;
+  let summary = null, D = null, shown = PAGE;
   const cache = {};
+  let goldSel = new Set();
+  const typeSel = {}; // pipeline index -> Set of type indices, per dataset (reset on dataset change)
 
   function nice(p) {
     const base = {
@@ -258,208 +292,302 @@
   }
   const pct = (v) => v == null ? "–" : (100 * v).toFixed(1) + "%";
   const num = (v, d = 2) => v == null ? "–" : v.toFixed(d);
-  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const idxOf = (id) => D.pipelines.findIndex((p) => p.id === id);
 
   function fillSelect(el, items, value, label = (x) => x) {
     el.innerHTML = items.map((x) => `<option value="${esc(x)}"${x === value ? " selected" : ""}>${esc(label(x))}</option>`).join("");
   }
-
   async function getJSON(path) {
     const r = await fetch(path);
     if (!r.ok) throw new Error(`${path}: ${r.status}`);
     return r.json();
   }
 
-  // Character runs of the segment with gold, censored and over-masked flags, for one model (or none)
-  function runs(text, gold, spans) {
+  // ---------- scoring under the current type choices ----------
+  function goldOf(row) { return row.gold.filter((g) => goldSel.has(g[2])); }
+
+  function evalModel(row, mi) {
+    const pred = row.p[mi];
+    if (!pred) return null;
+    const P = D.pipelines[mi];
+    if (!P.spans) {
+      return { flagged: !!pred[0], score: pred[1], masks: pred[0] ? [[0, row.text.length, "segment"]] : [] };
+    }
+    const sel = typeSel[mi];
+    const all = sel.size === P.types.length;
+    const kept = pred[2].filter((s) => sel.has(s[2]));
+    const censored = kept.filter((s) => s[3] >= P.bar);
+    const masks = censored.map((s) => [s[0], s[1], P.types[s[2]]]);
+    if (all) return { flagged: !!pred[0], score: pred[1], masks };
+    return { flagged: censored.length > 0, score: kept.reduce((m, s) => Math.max(m, s[3]), 0), masks };
+  }
+
+  function metrics(rows, mi) {
+    let tp = 0, fp = 0, pos = 0, neg = 0, piiChars = 0, piiHit = 0, cleanChars = 0, cleanHit = 0, ran = 0;
+    const posScores = [], negScores = [];
+    for (const row of rows) {
+      const r = evalModel(row, mi);
+      if (!r) continue;
+      ran++;
+      const gold = goldOf(row), label = gold.length > 0;
+      if (label) { pos++; posScores.push(r.score); if (r.flagged) tp++; }
+      else { neg++; negScores.push(r.score); if (r.flagged) fp++; }
+      const n = row.text.length;
+      const g = new Uint8Array(n), m = new Uint8Array(n);
+      for (const [s, e] of gold) g.fill(1, Math.max(0, s), Math.min(n, e));
+      for (const [s, e] of r.masks) m.fill(1, Math.max(0, s), Math.min(n, e));
+      for (let i = 0; i < n; i++) {
+        const c = row.text.charCodeAt(i);
+        if (c === 32 || c === 10 || c === 9 || c === 13) continue;
+        if (g[i]) { piiChars++; if (m[i]) piiHit++; } else { cleanChars++; if (m[i]) cleanHit++; }
+      }
+    }
+    let recall5 = null;
+    if (neg >= MIN_CLEAN_FOR_RATE && pos > 0) {
+      const sorted = negScores.slice().sort((a, b) => a - b);
+      const bar = sorted[Math.min(sorted.length - 1, Math.ceil(0.95 * (sorted.length - 1)))];
+      recall5 = posScores.filter((s) => s > bar).length / pos;
+    }
+    return {
+      ran, pos, neg, tp, fp,
+      recall: pos ? tp / pos : null,
+      falseMask: neg ? fp / neg : null,
+      precision: tp + fp ? tp / (tp + fp) : null,
+      recall5,
+      piiChars: piiChars ? piiHit / piiChars : null,
+      cleanChars: cleanChars ? cleanHit / cleanChars : null,
+    };
+  }
+
+  function outcomeOf(row, r) {
+    if (!r) return "na";
+    const label = goldOf(row).length > 0;
+    return label ? (r.flagged ? "tp" : "fn") : (r.flagged ? "fp" : "tn");
+  }
+  const OUT_LABEL = { tp: "caught", fn: "missed", fp: "over-masked", tn: "left clean", na: "not run" };
+
+  // ---------- rendering text ----------
+  function runs(text, gold, masks) {
     const cuts = new Set([0, text.length]);
     for (const [s, e] of gold) { cuts.add(Math.max(0, s)); cuts.add(Math.min(text.length, e)); }
-    for (const [s, e] of spans || []) { cuts.add(Math.max(0, s)); cuts.add(Math.min(text.length, e)); }
-    const points = [...cuts].sort((x, y) => x - y);
-    const out = [];
+    for (const [s, e] of masks) { cuts.add(Math.max(0, s)); cuts.add(Math.min(text.length, e)); }
+    const points = [...cuts].sort((x, y) => x - y), out = [];
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i], b = points[i + 1];
       if (b <= a) continue;
-      const g = gold.find(([s, e]) => s <= a && e >= b);
-      const m = (spans || []).find(([s, e]) => s <= a && e >= b);
-      out.push({ text: text.slice(a, b), gold: g ? g[2] : null, mask: m ? m[2] : null });
+      const g = gold.find(([s, e]) => s <= a && e >= b), m = masks.find(([s, e]) => s <= a && e >= b);
+      out.push({ text: text.slice(a, b), gold: g ? D.gold_types[g[2]] : null, mask: m ? m[2] : null, maskId: m ? masks.indexOf(m) : -1 });
     }
     return out;
   }
-
   function goldLine(row) {
-    return runs(row.text, row.gold, null).map((r) => r.gold ? `<span class="g" title="${esc(r.gold)}">${esc(r.text)}</span>` : esc(r.text)).join("");
+    const sel = goldOf(row), other = row.gold.filter((g) => !goldSel.has(g[2]));
+    const parts = runs(row.text, sel, []);
+    return parts.map((r) => {
+      if (r.gold) return `<span class="g" title="${esc(r.gold)}">${esc(r.text)}</span>`;
+      return esc(r.text);
+    }).join("") + (other.length ? ` <span class="tiny">(${other.length} gold span${other.length > 1 ? "s" : ""} of unticked types not counted)</span>` : "");
   }
-
-  function censoredLine(row, pred) {
-    const spans = pred ? pred[2] : [];
-    const parts = runs(row.text, row.gold, spans);
+  function censoredLine(row, r) {
+    const parts = runs(row.text, goldOf(row), r.masks);
     let html = "", i = 0;
     while (i < parts.length) {
-      const r = parts[i];
-      if (r.mask) {
-        // merge consecutive masked runs of the same span into one bar, striped when it covers no gold
-        let j = i, kind = r.mask, hasGold = false, clean = false;
-        while (j < parts.length && parts[j].mask === kind) { hasGold ||= !!parts[j].gold; clean ||= !parts[j].gold && parts[j].text.trim() !== ""; j++; }
-        html += `<span class="mask${hasGold ? "" : " over"}" title="${esc(kind)}${hasGold ? "" : " (no gold PII here)"}">${esc(kind.replace(/_/g, " "))}</span>`;
+      const part = parts[i];
+      if (part.mask) {
+        let j = i, hasGold = false;
+        while (j < parts.length && parts[j].maskId === part.maskId) { hasGold ||= !!parts[j].gold; j++; }
+        html += `<span class="mask${hasGold ? "" : " over"}" title="${esc(part.mask)}${hasGold ? "" : " (no counted gold PII here)"}">${esc(part.mask.replace(/_/g, " "))}</span>`;
         i = j;
-      } else if (r.gold) {
-        html += `<span class="leak" title="gold ${esc(r.gold)} left visible">${esc(r.text)}</span>`;
-        i++;
-      } else {
-        html += esc(r.text);
-        i++;
-      }
+      } else if (part.gold) {
+        html += `<span class="leak" title="gold ${esc(part.gold)} left visible">${esc(part.text)}</span>`; i++;
+      } else { html += esc(part.text); i++; }
     }
     return html;
   }
 
-  function outcome(row, pred) {
-    if (!pred) return "na";
-    return row.pii ? (pred[0] ? "tp" : "fn") : (pred[0] ? "fp" : "tn");
+  // ---------- type checklists ----------
+  function renderChecks(which) {
+    const box = $("c-" + which), countEl = $("t-" + which + "-n");
+    if (which === "gold") {
+      box.innerHTML = D.gold_types.map((t, i) => `<label><input type="checkbox" data-k="gold" data-i="${i}"${goldSel.has(i) ? " checked" : ""}>${esc(t)}</label>`).join("") || '<span class="tiny">This dataset has segment labels only.</span>';
+      countEl.textContent = D.gold_types.length ? `${goldSel.size} of ${D.gold_types.length}` : "";
+      return;
+    }
+    const mi = idxOf($("f-" + which).value), P = D.pipelines[mi];
+    if (!P || !P.spans) { box.innerHTML = '<span class="tiny">Censors whole segments; no types to choose.</span>'; countEl.textContent = ""; return; }
+    box.innerHTML = P.types.map((t, i) => `<label><input type="checkbox" data-k="${which}" data-i="${i}"${typeSel[mi].has(i) ? " checked" : ""}>${esc(t)}</label>`).join("");
+    countEl.textContent = `${typeSel[mi].size} of ${P.types.length}`;
   }
-  const OUT_LABEL = { tp: "caught", fn: "missed", fp: "over-masked", tn: "left clean", na: "no run" };
-  function leaks(row, pred) {
-    if (!pred) return false;
-    return runs(row.text, row.gold, pred[2]).some((r) => r.gold && !r.mask && r.text.trim());
+  function onCheck(e) {
+    const input = e.target.closest("input[data-k]");
+    if (!input) return;
+    const k = input.dataset.k, i = Number(input.dataset.i);
+    const set = k === "gold" ? goldSel : typeSel[idxOf($("f-" + k).value)];
+    input.checked ? set.add(i) : set.delete(i);
+    refreshAll();
   }
-
-  function renderSummary() {
-    const ds = summary.datasets.find((d) => d.name === $("f-dataset").value);
-    const a = $("f-a").value, b = $("f-b").value;
-    if (!ds) { $("summary").innerHTML = ""; return; }
-    const col = (p, cls, tag) => {
-      const m = ds.models[p] || {};
-      return `<div class="vs-col ${cls}"><div class="name"><span class="ab-tag ${cls}">${tag}</span>${esc(nice(p))}</div>
-        <div class="metrics">
-          <div class="metric"><div class="v">${num(m.recall5)}</div><div class="k">recall at 5% mask</div></div>
-          <div class="metric"><div class="v">${num(m.recall)}</div><div class="k">recall at its own bar</div></div>
-          <div class="metric"><div class="v">${pct(m.false_mask)}</div><div class="k">clean segments masked</div></div>
-          <div class="metric"><div class="v">${pct(m.pii_chars)}</div><div class="k">PII characters censored</div></div>
-          <div class="metric"><div class="v">${pct(m.clean_chars)}</div><div class="k">clean characters censored</div></div>
-          <div class="metric"><div class="v">${m.ms == null ? "–" : m.ms.toFixed(1)}</div><div class="k">ms per segment (p50${m.device ? ", " + esc(m.device.replace(/^NVIDIA /, "")) : ""})</div></div>
-        </div></div>`;
-    };
-    const ranked = Object.entries(ds.models).filter(([p]) => p !== "constant-pii").sort((x, y) => (y[1].recall5 ?? -1) - (x[1].recall5 ?? -1));
-    const rows = ranked.map(([p, m]) => `<tr class="${p === a ? "is-a" : p === b ? "is-b" : ""}">
-        <td>${esc(nice(p))}<button class="pick" type="button" data-pick="a" data-p="${esc(p)}" aria-label="Set ${esc(nice(p))} as model A">A</button><button class="pick" type="button" data-pick="b" data-p="${esc(p)}" aria-label="Set ${esc(nice(p))} as model B">B</button></td>
-        <td class="barcell"><div class="hbar"><span style="width:${Math.max(0, (m.recall5 || 0) * 100)}%"></span></div></td>
-        <td class="num">${num(m.recall5)}</td><td class="num">${pct(m.false_mask)}</td><td class="num">${pct(m.pii_chars)}</td><td class="num">${pct(m.clean_chars)}</td><td class="num">${num(m.auc, 3)}</td></tr>`).join("");
-    $("summary").innerHTML = `<div class="summary-head"><h2>${esc(ds.name)}</h2>
-        <div class="facts"><span>${ds.n.toLocaleString()} segments in the full set</span><span>${pct(ds.pii / ds.n)} with PII</span><span>${data ? data.rows.length.toLocaleString() : "…"} sampled here</span></div></div>
-      <div class="vs">${col(a, "a", "A")}${col(b, "b", "B")}</div>
-      <details class="board"${store.get("board") === "open" ? " open" : ""}><summary>Every model on this dataset, by recall at a 5% mask rate</summary>
-        <div class="board-table"><table><thead><tr><th>model</th><th></th><th class="num">recall @5%</th><th class="num">clean masked</th><th class="num">PII chars</th><th class="num">clean chars</th><th class="num">ROC AUC</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
-    $("summary").querySelector("details.board").addEventListener("toggle", (e) => store.set("board", e.target.open ? "open" : "closed"));
+  function setAll(which, on) {
+    if (which === "gold") goldSel = new Set(on ? D.gold_types.map((_, i) => i) : []);
+    else { const mi = idxOf($("f-" + which).value); const P = D.pipelines[mi]; if (P && P.spans) typeSel[mi] = new Set(on ? P.types.map((_, i) => i) : []); }
+    refreshAll();
   }
 
-  function filtered() {
-    const a = $("f-a").value, b = $("f-b").value, view = $("f-view").value, type = $("f-type").value, lang = $("f-lang").value;
-    const q = $("f-q").value.trim().toLowerCase();
-    let rows = data.rows.filter((r) => {
-      if (type && !r.gold.some((g) => g[2] === type)) return false;
-      if (lang && r.lang !== lang) return false;
-      if (q && !r.text.toLowerCase().includes(q)) return false;
-      const oa = outcome(r, r.p[a]), ob = outcome(r, r.p[b]);
+  // ---------- views ----------
+  function viewRows() {
+    const ai = idxOf($("f-a").value), bi = idxOf($("f-b").value);
+    const view = $("f-view").value, typeName = $("f-type").value, lang = $("f-lang").value, q = $("f-q").value.trim().toLowerCase();
+    const typeIdx = D.gold_types.indexOf(typeName);
+    let rows = D.rows.filter((row) => {
+      if (typeName && !row.gold.some((g) => g[2] === typeIdx)) return false;
+      if (lang && row.lang !== lang) return false;
+      if (q && !row.text.toLowerCase().includes(q)) return false;
+      if (view === "all") return true;
+      const ra = evalModel(row, ai), rb = evalModel(row, bi), oa = outcomeOf(row, ra), ob = outcomeOf(row, rb);
       switch (view) {
-        case "disagree": return r.p[a] && r.p[b] && r.p[a][0] !== r.p[b][0];
+        case "disagree": return ra && rb && ra.flagged !== rb.flagged;
         case "a-fn": return oa === "fn";
         case "b-fn": return ob === "fn";
         case "a-fp": return oa === "fp";
         case "b-fp": return ob === "fp";
         case "both-fn": return oa === "fn" && ob === "fn";
-        case "leak-a": return leaks(r, r.p[a]);
-        case "leak-b": return leaks(r, r.p[b]);
+        case "leak-a": return ra && runs(row.text, goldOf(row), ra.masks).some((p) => p.gold && !p.mask && p.text.trim());
+        case "leak-b": return rb && runs(row.text, goldOf(row), rb.masks).some((p) => p.gold && !p.mask && p.text.trim());
         default: return true;
       }
     });
-    const sa = (r) => r.p[a] ? r.p[a][1] : -1, sb = (r) => r.p[b] ? r.p[b][1] : -1;
     const sort = $("f-sort").value;
-    if (sort === "a-desc") rows.sort((x, y) => sa(y) - sa(x));
-    if (sort === "a-asc") rows.sort((x, y) => sa(x) - sa(y));
-    if (sort === "b-desc") rows.sort((x, y) => sb(y) - sb(x));
-    if (sort === "gap") rows.sort((x, y) => Math.abs(sa(y) - sb(y)) - Math.abs(sa(x) - sb(x)));
+    if (sort !== "sample") {
+      const sa = (row) => (evalModel(row, ai) || { score: -1 }).score, sb = (row) => (evalModel(row, bi) || { score: -1 }).score;
+      if (sort === "a-desc") rows.sort((x, y) => sa(y) - sa(x));
+      if (sort === "a-asc") rows.sort((x, y) => sa(x) - sa(y));
+      if (sort === "b-desc") rows.sort((x, y) => sb(y) - sb(x));
+      if (sort === "gap") rows.sort((x, y) => Math.abs(sa(y) - sb(y)) - Math.abs(sa(x) - sb(x)));
+    }
     return rows;
   }
 
-  function card(r) {
+  function renderSummary(rows) {
+    const ds = summary.datasets.find((d) => d.name === D.dataset) || { models: {}, n: D.rows.length, pii: 0 };
+    const a = $("f-a").value, b = $("f-b").value, ai = idxOf(a), bi = idxOf(b);
+    const allGold = goldSel.size === D.gold_types.length;
+    const col = (p, mi, cls, tag) => {
+      const m = metrics(rows, mi), full = ds.models[p] || {};
+      const P = D.pipelines[mi], typesNote = P && P.spans && typeSel[mi].size !== P.types.length ? `${typeSel[mi].size} of ${P.types.length} types` : "all types";
+      return `<div class="vs-col ${cls}"><div class="name"><span class="ab-tag ${cls}">${tag}</span>${esc(nice(p))} <span class="tiny">· ${typesNote}</span></div>
+        <div class="metrics">
+          <div class="metric"><div class="v">${num(m.recall5)}</div><div class="k">recall at 5% mask</div></div>
+          <div class="metric"><div class="v">${num(m.recall)}</div><div class="k">recall at its own bar <span class="counts">${m.tp}/${m.pos}</span></div></div>
+          <div class="metric"><div class="v">${pct(m.falseMask)}</div><div class="k">clean segments masked <span class="counts">${m.fp}/${m.neg}</span></div></div>
+          <div class="metric"><div class="v">${pct(m.piiChars)}</div><div class="k">PII characters censored</div></div>
+          <div class="metric"><div class="v">${pct(m.cleanChars)}</div><div class="k">clean characters censored</div></div>
+          <div class="metric"><div class="v">${full.ms == null ? "–" : full.ms.toFixed(1)}</div><div class="k">ms per segment (p50${full.device ? ", " + esc(full.device.replace(/^NVIDIA /, "")) : ""})</div></div>
+        </div>
+        <div class="scope">Full set, all types: <b>${num(full.recall5)}</b> recall at 5% mask · <b>${pct(full.false_mask)}</b> clean masked · <b>${pct(full.pii_chars)}</b> PII characters</div></div>`;
+    };
+    const board = D.pipelines.map((P, mi) => [P.id, metrics(rows, mi)]).filter(([p]) => p !== "constant-pii").sort((x, y) => (y[1].recall5 ?? -1) - (x[1].recall5 ?? -1));
+    const trs = board.map(([p, m]) => `<tr class="${p === a ? "is-a" : p === b ? "is-b" : ""}">
+        <td>${esc(nice(p))}<button class="pick" type="button" data-pick="a" data-p="${esc(p)}" aria-label="Set ${esc(nice(p))} as model A">A</button><button class="pick" type="button" data-pick="b" data-p="${esc(p)}" aria-label="Set ${esc(nice(p))} as model B">B</button></td>
+        <td class="barcell"><div class="hbar"><span style="width:${Math.max(0, (m.recall5 || 0) * 100)}%"></span></div></td>
+        <td class="num">${num(m.recall5)}</td><td class="num">${num(m.recall)}</td><td class="num">${pct(m.falseMask)}</td><td class="num">${pct(m.piiChars)}</td><td class="num">${pct(m.cleanChars)}</td></tr>`).join("");
+    const pos = rows.filter((r) => goldOf(r).length).length;
+    $("summary").innerHTML = `<div class="summary-head"><h2>${esc(D.dataset)}</h2>
+        <div class="facts"><span>${rows.length.toLocaleString()} segments in this view</span><span>${pos.toLocaleString()} with ${allGold ? "" : "counted "}PII</span><span>from a uniform sample of ${D.rows.length.toLocaleString()} (full set ${ds.n.toLocaleString()})</span></div></div>
+      ${rows.filter((r) => !goldOf(r).length).length < MIN_CLEAN_FOR_RATE ? '<p class="tiny">Fewer than 20 clean segments in this view, so "recall at 5% mask" is not shown.</p>' : ""}
+      <div class="vs">${col(a, ai, "a", "A")}${col(b, bi, "b", "B")}</div>
+      <details class="board"${store.get("board") === "open" ? " open" : ""}><summary>Every model on this view, by recall at a 5% mask rate (each with its own type choice; untouched models use all types)</summary>
+        <div class="board-table"><table><thead><tr><th>model</th><th></th><th class="num">recall @5%</th><th class="num">recall</th><th class="num">clean masked</th><th class="num">PII chars</th><th class="num">clean chars</th></tr></thead><tbody>${trs}</tbody></table></div></details>`;
+    $("summary").querySelector("details.board").addEventListener("toggle", (e) => store.set("board", e.target.open ? "open" : "closed"));
+  }
+
+  function conversationFold(row) {
+    if (!row.before.length) return "";
+    const ownIdx = row.before.map((t, i) => t[0] ? i : -1).filter((i) => i >= 0);
+    const lastTwo = new Set(ownIdx.slice(-2));
+    const turns = row.before.map((t, i) => {
+      const own = !!t[0];
+      const tag = own ? (lastTwo.has(i) ? '<span class="tag read">read by "own last 2 turns" models</span>' : '<span class="tag">own turn</span>') : '<span class="tag">not transcribed in fil</span>';
+      return `<div class="turn ${own ? "own" : "other"}"><div class="spk"><span>${esc(t[1])}</span>${tag}</div><div class="t">${esc(t[2])}</div></div>`;
+    }).join("");
+    return `<details class="ctx"><summary>The conversation up to this segment (${row.before.length} earlier turn${row.before.length > 1 ? "s" : ""})</summary><div class="turns">${turns}
+      <div class="turn now"><div class="spk"><span>this segment</span><span class="tag now">scored</span></div><div class="t">${esc(row.text)}</div></div></div></details>`;
+  }
+
+  function card(row) {
     const a = $("f-a").value, b = $("f-b").value;
     const line = (p, cls, tag) => {
-      const pred = r.p[p], o = outcome(r, pred);
+      const mi = idxOf(p), r = evalModel(row, mi), o = outcomeOf(row, r);
       return `<div class="line ${cls}"><div class="who"><span><span class="ab-tag ${cls}">${tag}</span><span class="nm">${esc(nice(p).split(" · ")[0])}</span></span>
-        <span><span class="out ${o}">${OUT_LABEL[o]}</span> <span class="score">${pred ? pred[1].toFixed(3) : ""}</span></span></div>
-        <div class="txt">${pred ? censoredLine(r, pred) : '<span class="tiny">not run on this dataset</span>'}</div></div>`;
+        <span><span class="out ${o}">${OUT_LABEL[o]}</span> <span class="score">${r ? r.score.toFixed(3) : ""}</span></span></div>
+        <div class="txt">${r ? censoredLine(row, r) : '<span class="tiny">not run on this dataset</span>'}</div></div>`;
     };
-    const types = [...new Set(r.gold.map((g) => g[2]))];
+    const gold = goldOf(row), types = [...new Set(gold.map((g) => D.gold_types[g[2]]))];
     return `<article class="seg">
-      <div class="meta"><code>${esc(r.id)}</code>${r.lang ? `<span class="chip">${esc(r.lang)}</span>` : ""}${r.cat ? `<span class="chip">${esc(r.cat)}</span>` : ""}
-        <span class="chip${r.pii ? " pii" : ""}">${r.pii ? "PII: " + esc(types.join(", ") || "yes") : "no PII"}</span>
-        ${r.why.map((w) => `<span class="chip why" title="why this segment is in the sample">${esc(w)}</span>`).join("")}</div>
-      <div class="line"><div class="who"><span class="nm">Segment</span><span class="tiny">gold underlined</span></div><div class="txt">${goldLine(r)}</div></div>
+      <div class="meta"><code>${esc(row.id)}</code>${row.lang ? `<span class="chip">${esc(row.lang)}</span>` : ""}${row.cat ? `<span class="chip">${esc(row.cat)}</span>` : ""}
+        <span class="chip${gold.length ? " pii" : ""}">${gold.length ? "PII: " + esc(types.join(", ")) : "no counted PII"}</span></div>
+      <div class="line"><div class="who"><span class="nm">Segment</span><span class="tiny">gold underlined</span></div><div class="txt">${goldLine(row)}</div></div>
       ${line(a, "a", "A")}${line(b, "b", "B")}
-      ${r.ctx ? `<details class="ctx"><summary>Earlier turns in the conversation</summary><div class="txt">${esc(r.ctx)}</div></details>` : ""}
+      ${conversationFold(row)}
     </article>`;
   }
 
-  function renderCards() {
-    const rows = filtered();
-    $("count").textContent = `${rows.length.toLocaleString()} of ${data.rows.length.toLocaleString()} sampled segments`;
+  function refreshAll() {
+    const rows = viewRows();
+    renderChecks("gold"); renderChecks("a"); renderChecks("b");
+    renderSummary(rows);
+    $("count").textContent = `${rows.length.toLocaleString()} of ${D.rows.length.toLocaleString()} sampled segments`;
     $("cards").innerHTML = rows.length ? rows.slice(0, shown).map(card).join("") : '<div class="empty">No sampled segment matches these filters. Widen the type, language or search.</div>';
     $("more").hidden = rows.length <= shown;
-  }
-
-  function persist() {
     for (const k of ["dataset", "a", "b", "view", "sort"]) store.set(k, $("f-" + k).value);
   }
 
   async function loadDataset(name) {
     $("cards").innerHTML = '<div class="empty">Loading segments…</div>';
-    data = cache[name] || (cache[name] = await getJSON(`data/${encodeURIComponent(name)}.json`));
-    const models = data.pipelines;
-    const pick = (pref, saved, avoid) => (saved && models.includes(saved) && saved !== avoid) ? saved : (pref.find((p) => models.includes(p) && p !== avoid) || models.find((p) => p !== avoid && p !== "constant-pii") || models[0]);
+    const file = name.replace(/[^A-Za-z0-9._-]/g, "_");
+    D = cache[name] || (cache[name] = await getJSON(`data/${encodeURIComponent(file)}.json`));
+    goldSel = new Set(D.gold_types.map((_, i) => i));
+    for (const k of Object.keys(typeSel)) delete typeSel[k];
+    D.pipelines.forEach((P, mi) => { typeSel[mi] = new Set(P.types.map((_, i) => i)); });
+    const ids = D.pipelines.map((P) => P.id);
+    const pick = (pref, saved, avoid) => (saved && ids.includes(saved) && saved !== avoid) ? saved : (pref.find((p) => ids.includes(p) && p !== avoid) || ids.find((p) => p !== avoid && p !== "constant-pii") || ids[0]);
     const a = pick(PREFERRED_A, $("f-a").value || store.get("a"), null);
     const b = pick(PREFERRED_B, $("f-b").value || store.get("b"), a);
-    fillSelect($("f-a"), models, a, nice);
-    fillSelect($("f-b"), models, b, nice);
-    const types = [...new Set(data.rows.flatMap((r) => r.gold.map((g) => g[2])))].sort();
-    fillSelect($("f-type"), ["", ...types], "", (t) => t || "Any type");
-    const langs = [...new Set(data.rows.map((r) => r.lang).filter(Boolean))].sort();
+    fillSelect($("f-a"), ids, a, nice);
+    fillSelect($("f-b"), ids, b, nice);
+    fillSelect($("f-type"), ["", ...D.gold_types], "", (t) => t || "Any");
+    const langs = [...new Set(D.rows.map((r) => r.lang).filter(Boolean))].sort();
     fillSelect($("f-lang"), ["", ...langs], "", (l) => l || "Any language");
     $("f-lang").disabled = langs.length < 2;
-    $("sample-note").textContent = "This page holds an error-weighted sample: every disagreement, each model's misses and false masks, and a random draw. Full predictions are in the run's parquet files.";
+    $("sample-note").textContent = `A uniform random sample of ${D.rows.length.toLocaleString()} segments; every number on the page is computed on the segments in view. The full-set line under each model is the run's report.`;
     shown = PAGE;
-    renderSummary();
-    renderCards();
-    persist();
+    refreshAll();
   }
 
   async function start() {
-    try {
-      summary = await getJSON("data/summary.json");
-    } catch (error) {
-      $("cards").innerHTML = `<div class="empty">The benchmark data did not load (${esc(String(error.message || error))}). Publish the page with its data/ folder.</div>`;
-      return;
-    }
-    const names = summary.datasets.map((d) => d.name);
-    const saved = store.get("dataset");
+    try { summary = await getJSON("data/summary.json"); }
+    catch (error) { $("cards").innerHTML = `<div class="empty">The benchmark data did not load (${esc(String(error.message || error))}). Publish the page with its data/ folder.</div>`; return; }
+    const names = summary.datasets.map((d) => d.name), saved = store.get("dataset");
     fillSelect($("f-dataset"), names, names.includes(saved) ? saved : names[0]);
     for (const k of ["view", "sort"]) { const v = store.get(k); if (v) $("f-" + k).value = v; }
-    $("foot").textContent = `${names.length} datasets. Censoring is drawn from each model's own spans; a segment-level model censors the whole segment.`;
+    $("foot").textContent = `${names.length} datasets. Censoring is drawn from each model's own spans at its own bar; a segment-level model censors the whole segment.`;
     await loadDataset($("f-dataset").value);
   }
 
   $("f-dataset").addEventListener("change", (e) => loadDataset(e.target.value));
-  for (const id of ["f-a", "f-b"]) $(id).addEventListener("change", () => { shown = PAGE; renderSummary(); renderCards(); persist(); });
-  for (const id of ["f-view", "f-type", "f-lang", "f-sort"]) $(id).addEventListener("change", () => { shown = PAGE; renderCards(); persist(); });
-  $("f-q").addEventListener("input", () => { shown = PAGE; renderCards(); });
-  $("more").addEventListener("click", () => { shown += PAGE; renderCards(); });
-  $("swap").addEventListener("click", () => { const a = $("f-a").value; $("f-a").value = $("f-b").value; $("f-b").value = a; renderSummary(); renderCards(); persist(); });
-  $("summary").addEventListener("click", (e) => {
-    const btn = e.target.closest("button.pick");
-    if (!btn) return;
-    $(btn.dataset.pick === "a" ? "f-a" : "f-b").value = btn.dataset.p;
-    shown = PAGE; renderSummary(); renderCards(); persist();
+  for (const id of ["f-a", "f-b", "f-view", "f-type", "f-lang", "f-sort"]) $(id).addEventListener("change", () => { shown = PAGE; refreshAll(); });
+  let typing;
+  $("f-q").addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => { shown = PAGE; refreshAll(); }, 200); });
+  $("more").addEventListener("click", () => { shown += PAGE; refreshAll(); });
+  $("swap").addEventListener("click", () => { const a = $("f-a").value; $("f-a").value = $("f-b").value; $("f-b").value = a; refreshAll(); });
+  for (const id of ["c-gold", "c-a", "c-b"]) $(id).addEventListener("change", onCheck);
+  document.addEventListener("click", (e) => {
+    const all = e.target.closest("button[data-all]"), none = e.target.closest("button[data-none]");
+    if (all) setAll(all.dataset.all, true);
+    if (none) setAll(none.dataset.none, false);
+    const pickBtn = e.target.closest("button.pick");
+    if (pickBtn) { $(pickBtn.dataset.pick === "a" ? "f-a" : "f-b").value = pickBtn.dataset.p; shown = PAGE; refreshAll(); }
   });
   start();
 })();
+
 </script>

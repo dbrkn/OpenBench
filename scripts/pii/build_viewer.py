@@ -11,8 +11,9 @@ Writes:
   the gold-censored text, and per pipeline `<pipeline>__verdict`, `__score`, `__spans`, `__censored` and
   `__outcome` (tp / fn / fp / tn at the segment level). `--push` uploads each as a config of a private dataset, so
   the Hub viewer and SQL console can filter and sort them.
-- `viewer/subset.json`: an error-weighted sample per dataset for the interactive viewer page: every segment the
-  pipelines disagree on (up to a cap), each pipeline's misses and false masks, and a seeded random sample.
+- `viewer/subset.json`: a seeded uniform sample per dataset (1,500 segments, or all of them) for the viewer page,
+  with each pipeline's spans and scores (`__raw`) and the turns before the segment, so the page can re-score any
+  subset under any choice of PII types without bias.
 """
 
 import argparse
@@ -42,18 +43,21 @@ def censor(text: str, spans: list[tuple[int, int, str]]) -> str:
 
 
 def predicted_spans(prediction: dict, text: str) -> list[tuple[int, int, str]]:
-    try:
-        return [(int(a), int(b), str(k)) for a, b, k in json.loads(prediction["raw_output"] or "")["spans"]]
-    except (ValueError, KeyError, TypeError):
-        whole = masked_ranges(prediction, text)
-        return [(a, b, "segment") for a, b in whole]
+    """The spans a prediction censors (at or above its bar), or the whole flagged text for a segment-level model."""
+    from openbench.pipeline.safety.span_common import parse_spans
+
+    parsed = parse_spans(prediction.get("raw_output"))
+    if parsed is None:
+        return [(a, b, "segment") for a, b in masked_ranges(prediction, text)]
+    spans, bar = parsed
+    return [(a, b, k) for a, b, k, score in spans if score >= bar]
 
 
 def outcome(label: bool, flagged: bool) -> str:
     return {(True, True): "tp", (True, False): "fn", (False, True): "fp", (False, False): "tn"}[(label, flagged)]
 
 
-def build(out: Path, subset_size: int, seed: int) -> dict[str, list[dict]]:
+def build(out: Path, subset_size: int = 1500, seed: int = 0) -> dict[str, list[dict]]:
     import pyarrow.parquet as pq
 
     from openbench.dataset import DatasetRegistry
@@ -85,7 +89,11 @@ def build(out: Path, subset_size: int, seed: int) -> dict[str, list[dict]]:
                 "source_category": row.get("source_category") or "",
                 "label": "pii" if label else "clean",
                 "text": text,
-                "context": "\n".join(f"{t['speaker']}: {t['text']}" for t in (row.get("conversation") or [])[:-1]),
+                "speaker": row.get("speaker") or "",
+                "conversation": json.dumps(
+                    [[t["speaker"], t["text"], bool(t["target"])] for t in row.get("conversation") or []],
+                    ensure_ascii=False,
+                ),
                 "gold_spans": json.dumps(gold),
                 "gold_censored": censor(text, gold) if gold else "",
             }
@@ -98,6 +106,7 @@ def build(out: Path, subset_size: int, seed: int) -> dict[str, list[dict]]:
                 record[f"{pipeline}__verdict"] = found["verdict"]
                 record[f"{pipeline}__score"] = found["score"]
                 record[f"{pipeline}__spans"] = json.dumps(spans)
+                record[f"{pipeline}__raw"] = found["spans"] or ""
                 record[f"{pipeline}__censored"] = censor(text, spans)
                 record[f"{pipeline}__outcome"] = outcome(label, found["verdict"] == "unsafe")
             wide.append(record)
@@ -105,29 +114,11 @@ def build(out: Path, subset_size: int, seed: int) -> dict[str, list[dict]]:
 
         pq.write_table(pa.Table.from_pylist(wide), viewer / f"{dataset}.parquet")
 
+        # A uniform random sample, so the metrics the page recomputes on any subset of it are unbiased
         rng = random.Random(seed)
-        chosen: dict[str, set[str]] = defaultdict(set)
-        by_id = {record["id"]: record for record in wide}
-        disagree = [r["id"] for r in wide if len({r.get(f"{p}__verdict") for p in pipelines} - {None}) > 1]
-        for reason, ids in [("disagreement", disagree)] + [
-            (f"{kind} {p}", [r["id"] for r in wide if r.get(f"{p}__outcome") == kind])
-            for p in pipelines
-            if p != "constant-pii"
-            for kind in ("fn", "fp")
-        ]:
-            for record_id in rng.sample(ids, min(len(ids), max(3, subset_size // (2 * len(pipelines) + 2)))):
-                chosen[record_id].add(reason)
-        for record_id in rng.sample(list(by_id), min(len(by_id), subset_size // 6)):
-            chosen[record_id].add("random")
-        picked = list(chosen)[:subset_size]
-        subsets[dataset] = [
-            {
-                **{k: v for k, v in by_id[i].items() if not k.endswith(("__censored",))},
-                "why": sorted(chosen[i]),
-            }
-            for i in picked
-        ]
-        print(f"{dataset}: {len(wide)} rows, {len(pipelines)} pipelines, {len(picked)} in the viewer subset")
+        picked = wide if len(wide) <= subset_size else rng.sample(wide, subset_size)
+        subsets[dataset] = [{k: v for k, v in record.items() if not k.endswith("__censored")} for record in picked]
+        print(f"{dataset}: {len(wide)} rows, {len(pipelines)} pipelines, {len(picked)} in the viewer sample")
     (viewer / "subset.json").write_text(json.dumps(subsets, ensure_ascii=False))
     return subsets
 
@@ -143,7 +134,7 @@ def push(out: Path, repo: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("out", type=Path)
-    parser.add_argument("--subset-size", type=int, default=400, help="Segments per dataset in subset.json.")
+    parser.add_argument("--subset-size", type=int, default=1500, help="Uniform sample per dataset in subset.json.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--push", metavar="REPO", help="Upload the wide tables to this private Hub dataset.")
     args = parser.parse_args()

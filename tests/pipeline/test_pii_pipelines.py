@@ -92,13 +92,15 @@ def test_spans_from_tokens_maps_target_tokens_to_the_sample_text():
     ranges = [(16, 27)]
     offsets = [(0, 2), (4, 8), (9, 12), (16, 19), (20, 24), (25, 27)]
     labels = ["O", "O", "S-private_phone", "B-private_phone", "E-private_phone", "O"]
-    assert spans_from_tokens(offsets, labels, ranges) == [(0, 8, "private_phone")]
+    assert spans_from_tokens(offsets, labels, ranges) == [(0, 8, "private_phone", 1.0)]
+    scored = spans_from_tokens(offsets, labels, ranges, [0.0, 0.1, 0.9, 0.7, 0.95, 0.2])
+    assert scored == [(0, 8, "private_phone", 0.95)]
     # two target turns joined by a newline in the sample's text: "it's 555\n0101"
     text, ranges = render_window(sample().window(16))
     offsets = [(text.index("555"), text.index("555") + 3), (text.index("0101"), text.index("0101") + 4)]
     spans = spans_from_tokens(offsets, ["S-private_phone", "S-private_phone"], ranges)
     target_text = "it's 555\n0101"
-    assert [target_text[a:b] for a, b, _ in spans] == ["555", "0101"]
+    assert [target_text[a:b] for a, b, _, _ in spans] == ["555", "0101"]
     assert entity_type("I-account_number") == "account_number" and entity_type("O") == "O"
 
 
@@ -115,3 +117,14 @@ def test_target_spans_keep_and_map_spans_inside_the_target_turns():
     assert verdict.label == SafetyLabel.UNSAFE and verdict.category == "phone"
     assert span_prediction([], 0.2, 0.5).label == SafetyLabel.SAFE
     assert span_prediction(kept, 0.2, 0.5, flag_on_spans=True).label == SafetyLabel.UNSAFE
+
+
+def test_span_prediction_keeps_candidates_below_the_bar():
+    from openbench.pipeline.safety.span_common import parse_spans
+
+    verdict = span_prediction([(0, 3, "phone", 0.9), (5, 8, "name", 0.2)], 0.9, 0.5, bar=0.5)
+    spans, bar = parse_spans(verdict.raw_output)
+    assert bar == 0.5 and spans == [(0, 3, "phone", 0.9), (5, 8, "name", 0.2)]
+    assert verdict.category == "phone"
+    assert parse_spans('{"spans": [[0, 3, "email"]]}') == ([(0, 3, "email", 1.0)], 0.0)
+    assert parse_spans("privacy_giving_pii=0.9") is None

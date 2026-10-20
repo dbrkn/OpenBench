@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The full PII benchmark on a GPU machine: build the datasets once, then JOBS_PER_GPU workers per visible GPU, each
 # taking pipelines round-robin and running them over every dataset (python scripts/pii/run_full.py). Then the
-# report and the viewer files.
+# report, the viewer tables (viewer/<dataset>.parquet, for the Hub) and the viewer page's files (viewer/web/).
 #
 #   scripts/pii/run_full.sh                        # everything into ./pii_full
 #   OUT=pii_full JOBS_PER_GPU=2 scripts/pii/run_full.sh
@@ -34,3 +34,5 @@ done
 wait
 grep -h "failed" "$OUT"/worker_*.log || true
 "$PII_ENV/bin/python" scripts/pii/report_full.py "$OUT"
+"$PII_ENV/bin/python" scripts/pii/build_viewer.py "$OUT"
+"$PII_ENV/bin/python" scripts/pii/export_viewer.py "$OUT"

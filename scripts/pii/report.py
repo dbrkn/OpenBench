@@ -58,12 +58,15 @@ def recall_at_mask_rate(scores: np.ndarray, labels: np.ndarray, rate: float) -> 
 
 
 def masked_ranges(prediction: dict, text: str) -> list[tuple[int, int]]:
-    """Character ranges censored by a prediction: its spans when it emits them, else the whole flagged text."""
-    try:
-        spans = json.loads(prediction.get("raw_output") or "")["spans"]
-        return [(int(start), int(end)) for start, end, _ in spans]
-    except (ValueError, KeyError, TypeError):
+    """Character ranges censored by a prediction: its spans at or above the bar when it emits spans, else the whole
+    text when flagged (a segment-level classifier)."""
+    from openbench.pipeline.safety.span_common import parse_spans
+
+    parsed = parse_spans(prediction.get("raw_output"))
+    if parsed is None:
         return [(0, len(text))] if prediction["predicted_label"] == "unsafe" else []
+    spans, bar = parsed
+    return [(start, end) for start, end, _, score in spans if score >= bar]
 
 
 def character_scores(pairs: list[tuple[dict, dict]]) -> tuple[float, float] | None:
