@@ -145,7 +145,8 @@ def main(out: Path) -> None:
             )
         payload = {"dataset": dataset, "gold_types": gold_types, "pipelines": pipelines, "rows": compact}
         path = web / "data" / f"{re.sub(r'[^A-Za-z0-9._-]', '_', dataset)}.json"
-        path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        # Source transcripts carry U+FFFD replacement characters; a same-length "?" keeps every span offset
+        path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("\ufffd", "?"))
         print(f"{dataset}: {len(compact)} segments, {len(pipelines)} pipelines, {path.stat().st_size / 1e6:.1f} MB")
     shutil.copy(Path(__file__).with_name("viewer.html"), web / "index.html")
     print(f"viewer files in {web}")
